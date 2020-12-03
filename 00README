@@ -1,0 +1,50 @@
+Library: multiclust
+Version: 0.2-1
+Date: 2012-12-09
+Author: Arun Sethuraman, Karin S. Dorman, Wei-Chen Chen 
+Maintainer: Arun Sethuraman <arunseth@iastate.edu>
+Description: Model Based Population Clustering
+License: GPL (>= 2)
+URL: http://www.public.iastate.edu/~arunseth/ 
+
+To get started, simply type the following:
+
+> make
+> ./multiclust -h
+
+There are some sample data files in the data directory:
+	Blandings-PhyloStat.stru: Blandings turtle real data
+	SS1001.str1: simulated dataset
+	SS1001m.str1: same as above with some missing data
+	BlandingsSim4.str: data simulated under K=4 mixture model fit of Blandings
+
+Sample commands:
+- Fit mixture model to K=1,2,3 with 10 random initializations.
+	./multiclust -f data/SS1001m.str1 -k 3 -n 10
+- Fit admixture model as above.
+	./multiclust -f data/SS1001m.str1 -k 3 -n 10 -a
+- Test H0: K=2 vs. Ha: K=3 under mixture model with 100 bootstraps.
+	./multiclust -f data/SS1001m.str1 -k 3 -n 10 -b 100
+
+
+:Arun Sethuraman
+
+TODO
+[KSD] Get rid of dat->IL data matrix.  I don't think it is seriously needed for
+anything.  Or write parallel code for IL or ILM matrix, but not both.
+Other than read_file.c, where dat->IL is used to hold the data read in from
+file before processing, only rnd_init.c seems to rely on dat->IL in a
+non-routine way, but that code is hardly optimal or even very logical.
+For very large datasets, the data should be read in a different way to avoid
+simultaneous allocation of dat->IL and dat->ILM.
+
+[KSD] Sites which show no variation across all individuals are useless.  One
+way to speed up the calculations is to compress the data by removing such sites
+and restoring them at the end during write out.
+
+[KSD] I have added some comments/analysis in e_step_admixture() and
+m_step_admixture() functions about different versions that use different
+amounts of memory and have different complexity.  This is where there could be
+parallel versions using either dat->IL vs. dat->ILM depending on data structure.
+
+[KSD] There are also TODO flags throughout the code.
