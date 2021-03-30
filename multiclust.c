@@ -7,7 +7,7 @@
  *
  * TODOS
  * [TODO] write the results of parametric bootstrap to a permanent output file
- * [TODO] run matrix of hypothesis tests and control FDR (as per Maitra & 
+ * [TODO] run matrix of hypothesis tests and control FDR (as per Maitra &
  *        Melnykov) to auto-estimate K
  * [TODO] add hypothesis test for H0: mixture vs. HA: admixture
  * [TODO] add code to run variable number of initializations, perhaps until the
@@ -116,7 +116,7 @@ fprintf(stdout, "Using OLDWAY code\n");
 			goto FREE_AND_EXIT;
 
 		/* TODO write this result to some file! */
-		fprintf(stdout, "p-value to reject H0: K=%d is %f\n", 
+		fprintf(stdout, "p-value to reject H0: K=%d is %f\n",
 			mod->null_K, mod->pvalue);
 	}
 
@@ -218,7 +218,7 @@ int timed_model_estimation(options *opt, data *dat, model *mod)
 
 		esec = ((double) clock() - start) / CLOCKS_PER_SEC;
 		if (opt->verbosity > SILENT) {
-			print_model_state(opt, dat, mod, 
+			print_model_state(opt, dat, mod,
 				((double) clock() - start)/CLOCKS_PER_SEC, 0);
 			fprintf(stdout, " %f %f %d %d", esec, esec/n_repeats,
 				target_reached, converged_repeats);
@@ -247,25 +247,25 @@ int timed_model_estimation(options *opt, data *dat, model *mod)
 			opt->accel_abbreviation,
 			opt->admixture && opt->eta_constrained
 			?"admix constrained":opt->admixture?"admix":"mix");
-		fprintf(stdout, "Run: %e %e %e %e n=%d i=%d u=(%f,%d) w=(%d,%d)\n", 
+		fprintf(stdout, "Run: %e %e %e %e n=%d i=%d u=(%f,%d) w=(%d,%d)\n",
 			opt->abs_error, opt->rel_error, opt->eta_lower_bound,
 			opt->p_lower_bound, opt->n_init, opt->n_init_iter, opt->desired_ll,
 			opt->target_revisit, opt->n_repeat, opt->repeat_seconds);
-		fprintf(stdout, "Number of repetitions: %d of %d requested, %d converged, %d reach target\n", 
+		fprintf(stdout, "Number of repetitions: %d of %d requested, %d converged, %d reach target\n",
 			n_repeats, opt->n_repeat, converged_repeats, target_reached);
-		fprintf(stdout, "Average time: %fs (total: %fs; target: %d)\n", 
+		fprintf(stdout, "Average time: %fs (total: %fs; target: %d)\n",
 			esec/n_repeats, esec, opt->repeat_seconds);
 		fprintf(stdout, "Average log likelihood: %f (+/- %f)\n",
 			sum_ll/n_repeats, sqrt((sum_ll2 - sum_ll*sum_ll/n_repeats)
 			/(n_repeats-1)));
-		fprintf(stdout, "Maximum log likelihood: %f first hit at run %d (AIC %f; BIC %f; RAND: %f)\n", 
+		fprintf(stdout, "Maximum log likelihood: %f first hit at run %d (AIC %f; BIC %f; RAND: %f)\n",
 			max_ll, first_hit_index, min_aic, min_bic, max_ll_rand);
 		fprintf(stdout, "Adjusted RAND: avg = %f +/- %f; max = %f\n",
 			sum_ar/n_repeats, sqrt((sum_ar2 - sum_ar*sum_ar/n_repeats)
 			/(n_repeats-1)), max_ar);
 		if (opt->max_K != opt->min_K) {
 			fprintf(stdout, "Average K (AIC): %f (+/- %f)\n",
-				sum_aic_K/n_repeats, sqrt((sum_aic_K2 - 
+				sum_aic_K/n_repeats, sqrt((sum_aic_K2 -
 				sum_aic_K*sum_aic_K/n_repeats)/(n_repeats - 1)));
 			fprintf(stdout, "Average K (BIC): %f (+/- %f)\n",
 				sum_bic_K/n_repeats, sqrt((sum_bic_K2 - sum_bic_K
@@ -331,7 +331,7 @@ int estimate_model(options *opt, data *dat, model *mod, int bootstrap)
 		/* Setting the largest size of the U and V arrays to be the larger of K and max_M */
 		if (dat->max_M < mod->K)
 			dat->max_M = mod->K;
-		
+
 		/* knowing K, can allocate space for parameters */
 		if ((err = allocate_model_for_k(opt, mod, dat)))
 			return err;
@@ -343,7 +343,7 @@ int estimate_model(options *opt, data *dat, model *mod, int bootstrap)
 
 		/* final output for this model */
 		if (opt->n_repeat == 1 && opt->verbosity) /* || opt->verbosity > SILENT) */
-			print_model_state(opt, dat, mod, 
+			print_model_state(opt, dat, mod,
 				((double) clock() - start)/CLOCKS_PER_SEC, 1);
 
 		total_iter += mod->n_total_iter;
@@ -387,7 +387,7 @@ int estimate_model(options *opt, data *dat, model *mod, int bootstrap)
 
 		if (!bootstrap)
 			mod->ts_obs = diff;
-		else 
+		else
 			mod->ts_bs = diff;
 	}
 
@@ -497,7 +497,7 @@ int maximize_likelihood(options *opt, data *dat, model *mod, int bootstrap)
 
 			/* write results to file if not bootstrap run */
 			if (!bootstrap && opt->write_files) {
-				/* TODO [KSD]: overwriting potentially many 
+				/* TODO [KSD]: overwriting potentially many
 				 * times for big data is bad */
 				if (opt->admixture) {
 					partition_admixture(dat, mod);
@@ -510,12 +510,12 @@ int maximize_likelihood(options *opt, data *dat, model *mod, int bootstrap)
 					popq_mix(opt, dat, mod);
 					indivq_mix(opt, dat, mod);
 				}
-			
+
 			}
 
 			if (opt->afile) {
 				if (!opt->write_files) {
-					if (opt->admixture) 
+					if (opt->admixture)
 						partition_admixture(dat, mod);
 					else
 						partition_mixture(dat, mod);
@@ -531,15 +531,15 @@ int maximize_likelihood(options *opt, data *dat, model *mod, int bootstrap)
 		/* output information if sufficiently verbose and not -w */
 		if (!bootstrap && opt->verbosity > QUIET && opt->write_files)
 			fprintf(stdout, "K = %d, initialization = %d: %f "
-				"(%s) in %3d iterations, %02d:%02d:%02d (%f; %d)\n", 
+				"(%s) in %3d iterations, %02d:%02d:%02d (%f; %d)\n",
 				mod->K, i, mod->logL,
 				mod->converged?"converged":"not converged",
-				mod->n_iter, 
+				mod->n_iter,
 				(int)(mod->seconds_run/3600),
 				(int)((((int)mod->seconds_run)%3600)/60),
 				(((int)mod->seconds_run)%60), mod->max_logL,
 				mod->n_maxll_times);
-		
+
 		/* global mle if K=1; no need for multiple initializations */
 		if (mod->K == 1)
 			break;
@@ -648,7 +648,7 @@ void print_model_state(options *opt, data *dat, model *mod, int diff, int newlin
 			mod->ever_converged?"converged":"not",
 			(int)(diff/3600),
 			(int)((diff%3600)/60), (diff%60),
-			mod->n_total_iter, 
+			mod->n_total_iter,
 			mod->n_init, mod->n_maxll_init,
 			mod->n_maxll_times);
 		if (opt->target_ll)
@@ -791,7 +791,7 @@ int synchronize(options *opt, data *dat, model *mod)
 		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
 			INVALID_USER_SETUP, "Minimum K (%d) must not exceed "
 			"maximum K (%d).", opt->min_K, opt->max_K);
-	
+
 	if (opt->afile)
 		err = read_afile(opt, dat);
 
@@ -812,7 +812,7 @@ int make_options(options **opt)
 	if (*opt == NULL)
 		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
 			MEMORY_ALLOCATION, "options object");
-	
+
 	(*opt)->filename = NULL;
 	(*opt)->R_format = 0;
 	(*opt)->alleles_are_indices = 0;
@@ -976,7 +976,7 @@ int make_model(model **mod)
 	if (*mod == NULL)
 		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
 			MEMORY_ALLOCATION, "model object");
-	
+
 	(*mod)->K = 1;
 #ifndef OLDWAY
 	(*mod)->vpklm = NULL;
@@ -1077,7 +1077,7 @@ int allocate_model_for_k(options *opt, model *mod, data *dat)
 		MAKE_3JAGGED_ARRAY(mod->mle_pKLM, mod->K, dat->L, dat->uniquealleles);
 
 	MAKE_1ARRAY(mod->count_K, mod->K);
-	
+
 	if (opt->admixture) {
 		MAKE_4JAGGED_ARRAY(mod->diklm, dat->I, mod->K, dat->L,
 			dat->uniquealleles);
@@ -1098,7 +1098,7 @@ int allocate_model_for_k(options *opt, model *mod, data *dat)
 			if (opt->n_bootstrap && !mod->mle_etaik)
 				MAKE_2ARRAY(mod->mle_etaik, dat->I, mod->K);
 		}
-				
+
 	} else {
 		MAKE_2ARRAY(mod->vik, dat->I, mod->K);
 #ifndef OLDWAY
@@ -1162,7 +1162,7 @@ int allocate_model_for_k(options *opt, model *mod, data *dat)
 
 
 /**
- * Free model object.  
+ * Free model object.
  *
  * @param mod model object
  * @return void
@@ -1174,7 +1174,7 @@ void free_model_data(model *mod, options *opt)
 #else
 	FREE_3ARRAY(mod->pKLM);
 #endif
-	
+
 	FREE_1ARRAY(mod->count_K);
 
 	if (opt->admixture)
@@ -1430,7 +1430,7 @@ int parse_options(options *opt, data *dat, int argc, const char **argv)
 								(void *)opt);
 							break;
 						case 'n':
-							opt->target_revisit = 
+							opt->target_revisit =
 								read_int(argc,
 								argv, ++i,
 								(void *)opt);
@@ -1475,7 +1475,7 @@ int parse_options(options *opt, data *dat, int argc, const char **argv)
 								(void *)opt);
 							break;
 						case 'n':
-							opt->n_repeat = 
+							opt->n_repeat =
 								read_int(argc,
 								argv, ++i,
 								(void *)opt);
@@ -1537,7 +1537,7 @@ void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
 	"\n\t\twhere <n> stands for integer, <s> for string, <d> for double",
 		prog_name);
 	fprintf(fp, "\nDESCRIPTION\n");
-	fprintf(fp, 
+	fprintf(fp,
 	"\t%s clusters multivariate discrete data observed on a sample of\n"
 	"\tindividuals using the EM algorithm.  It handles data missing at\n"
 	"\trandom.  It assumes coordinates within an individual are independent.\n"
@@ -1581,15 +1581,14 @@ void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
 		"The minimum number of clusters to fit (default: %d).\n"
 		"\t-2\t"
 		"The maximum number of clusters to fit (default: %d).\n",
-		opt->admixture?"yes":"no", opt->n_bootstrap, 
+		opt->admixture?"yes":"no", opt->n_bootstrap,
 		opt->eta_constrained?"yes":"no", opt->max_iter,
 		opt->path, opt->rel_error, opt->abs_error,
 		opt->adjust_step,
 		opt->n_init_iter, opt->alleles_are_indices?"yes":"no",
 		opt->max_K, opt->min_K, opt->max_K
 	);
-	fprintf(fp, 
-		"\t-m\t"
+	fprintf(fp,
 		"The number of Rand EM initializations, 0 to avoid Rand EM\n"
 		"\t\t(default: %d).\n"
 		"\t-n\t"
@@ -1602,7 +1601,15 @@ void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
 		"\t-R\t"
 		"Data file in R format (default: %s).\n"
 		"\t-s\t"
-		"The acceleration scheme (default: %s).\n",
+		"The acceleration scheme (default: %s).\n"
+		"\t\tAcceleration options:\n"
+		"\t\t\t0 (default) - no acceleration\n"
+		"\t\t\t1 - SQUAREM version 1\n"
+		"\t\t\t2 - SQUAREM version 2\n"
+		"\t\t\t3 - SQUAREM version 3\n"
+		"\t\t\t4 - Quasi Newton version 1 (1 secant condition)\n"
+		"\t\t\t5 - Quasi Newton version 2 (2 secant conditions)\n"
+		"\t\t\t6 - Quasi Newton version 3 (3 secant conditions)\n",
 		opt->n_rand_em_init, opt->n_init, opt->seed,
 		opt->R_format?"yes":"no", accel_method_names[MIN(opt->accel_scheme, QN)]
 	);
@@ -1627,7 +1634,7 @@ void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
 		"\t-z\t"
 		"Use block relaxation algorithm (default: %s).\n",
 		opt->target_revisit, opt->target_ll?opt->desired_ll:0,
-		opt->n_seconds, opt->verbosity, 
+		opt->n_seconds, opt->verbosity,
 		opt->write_files ? "yes" : "no",
 		opt->n_repeat, opt->repeat_seconds,
 		opt->max_repeat_seconds, opt->block_relax?"yes":"no"
@@ -1636,7 +1643,7 @@ void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
 
 /**
  * Compute (Adjusted) Rand index or E index.
- * 
+ *
  * @param n number of observations
  * @param k1 true number of clusters
  * @param k2 estimated number of clusters
@@ -1659,15 +1666,15 @@ double adj_rand(int n, int k1, int k2, int *cl1, int *cl2, int type)
 
 	for (i = 0; i < n; i++)
 		nmat[cl1[i]][cl2[i]]++;
-  
+
 	sumtrsq=0.;
 	for (i = 0; i < k1; i++) {
-		sumtr[i] = 0.; 
+		sumtr[i] = 0.;
 		for (j = 0; j < k2; j++)
 			sumtr[i] += nmat[i][j];
 		sumtrsq += sumtr[i] * sumtr[i];
 	}
-  
+
 	sumprsq = 0.;
 	for (j = 0; j < k2; j++) {
 		sumpr[j] = 0.;
@@ -1712,7 +1719,7 @@ double adj_rand(int n, int k1, int k2, int *cl1, int *cl2, int type)
 		ndotj2sum = 0.;
 		for (i = 0; i < k2; i++)
 			ndotj2sum += sumpr[i] * (sumpr[i]-1) / 2.0;
-	
+
 
 		term3 = nidot2sum * ndotj2sum / (n * (n-1.) / 2.);
 		term1 = nij2sum - term3;
