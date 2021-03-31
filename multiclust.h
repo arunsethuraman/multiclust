@@ -189,6 +189,7 @@ struct _options {
 	const char *afile;		/*!< file with partition (true) assignments */
 	int *partition_from_file;	/*!< partition from some file */
 	int pK;				/*!< K in afile */
+	int parallel;			/*!< determines parallelization of code */
 }; /* options */
 
 /**
