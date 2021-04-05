@@ -190,6 +190,7 @@ struct _options {
 	int *partition_from_file;	/*!< partition from some file */
 	int pK;				/*!< K in afile */
 	int parallel;			/*!< determines parallelization of code */
+	const char *outfile_name; 	/*!< allows user to create unique outfile name */
 }; /* options */
 
 /**
