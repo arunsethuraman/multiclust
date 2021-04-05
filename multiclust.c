@@ -1589,6 +1589,7 @@ void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
 		opt->max_K, opt->min_K, opt->max_K
 	);
 	fprintf(fp,
+		"\t-m\t"
 		"The number of Rand EM initializations, 0 to avoid Rand EM\n"
 		"\t\t(default: %d).\n"
 		"\t-n\t"
