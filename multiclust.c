@@ -1548,7 +1548,7 @@ void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
 	fprintf(fp, "\nSYNOPSIS\n");
 	fprintf(fp,
 	"\t%s [-k <n> | -1 <n> -2 <n>] [-a -b <n> -c -C <n> -d <s> -e <d> -E <d> -f <d> -g <d> -h"
-	"\n\t\t-i <n> -I -m <n> -n <n> -p <n> -R -s <n> -t <n> -T <d> -u <s> -v -w <s> -x] -f <s>\n"
+	"\n\t\t-i <n> -I -m <n> -M <n> -n <n> -p <n> -R -s <n> -t <n> -T <d> -u <s> -v -w <s> -x] -f <s>\n"
 	"\n\t\twhere <n> stands for integer, <s> for string, <d> for double",
 		prog_name);
 	fprintf(fp, "\nDESCRIPTION\n");
