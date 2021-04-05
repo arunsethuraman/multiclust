@@ -112,12 +112,7 @@ fprintf(stdout, "Using OLDWAY code\n");
 
 	/* set up parallelization mode */
 	if (opt->parallel)
-		err = estimate_model(opt, dat, mod, 0);
-		if (err)
-			goto FREE_AND_EXIT;
 		printf("%f\n", mod->max_logL);
-		goto FREE_AND_EXIT;
-
 
 	/* optionally run a bootstrap */
 	if (opt->n_bootstrap) {
@@ -1382,9 +1377,10 @@ int parse_options(options *opt, data *dat, int argc, const char **argv)
 					goto CMDLINE_ERROR;
 				break;
 			case 'M':
-				if (opt->parallel == 1)
-					opt->n_repeat = 1;
-					opt->verbosity = SILENT;
+				opt->parallel = 1;
+				opt->n_repeat = 1;
+				opt->verbosity = SILENT;
+				break;
 			case 'n':
 				opt->n_init = read_int(argc, argv, ++i,
 					(void *)opt);
