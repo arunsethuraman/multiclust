@@ -162,17 +162,17 @@ int write_file_detail(options* opt, data* dat, model* mod)
 	int len;		/* length of outfile name */
 	char* outfile = NULL;	/* outfile name */
 
-	/* compute length of output filename */
-	len = strlen(opt->path) + strlen(opt->filename) + (int)(log(mod->K) / log(10)) + 21;
-
-	MAKE_1ARRAY(outfile, len);
-
 	/* print maximum log likelihood, AIC, BIC, and partition counts */
 	if (opt->outfile_name != NULL) {
+		len = strlen(opt->outfile_name) + (int)(log(mod->K) / log(10)) + 21;
+		MAKE_1ARRAY(outfile, len);
 		sprintf(outfile, "%s.%s.K=%d.out.txt", opt->outfile_name,
 			opt->admixture ? "admix" : "mix", mod->K);
 	}
 	else {
+		/* compute length of output filename */
+		len = strlen(opt->path) + strlen(opt->filename) + (int)(log(mod->K) / log(10)) + 21;
+		MAKE_1ARRAY(outfile, len);
 		sprintf(outfile, "%s%s.%s.K=%d.out.txt", opt->path, opt->filename,
 			opt->admixture ? "admix" : "mix", mod->K);
 	}
@@ -343,23 +343,26 @@ int popq_admix(options* opt, data* dat, model* mod)
 	double** vik_p = NULL;
 	int err = NO_ERROR;
 
-	len = strlen(opt->path) + strlen(opt->filename) + 18;
 	k = mod->K;
 	while (k) {
 		len++;
 		k /= 10;
 	}
 
-	MAKE_1ARRAY(outfile, len);
-	if ((err = errno))
-		goto FREE_AND_RETURN;
-
 	/* open file to write */
 	if (opt->outfile_name != NULL) {
+		len = strlen(opt->outfile_name) + 18;
+		MAKE_1ARRAY(outfile, len);
+		if ((err = errno))
+			goto FREE_AND_RETURN;
 		sprintf(outfile, "%s_admix_popq_%d.popq", opt->outfile_name,
 			mod->K);
 	}
 	else {
+		len = strlen(opt->path) + strlen(opt->filename) + 18;
+		MAKE_1ARRAY(outfile, len);
+		if ((err = errno))
+			goto FREE_AND_RETURN;
 		sprintf(outfile, "%s%s_admix_popq_%d.popq", opt->path, opt->filename,
 			mod->K);
 	}
@@ -434,16 +437,18 @@ int indivq_admix(options* opt, data* dat, model* mod)
 	FILE* fp;
 	int err = NO_ERROR;
 
-	len = strlen(opt->path) + strlen(opt->filename) + 23 + (int)(log(mod->K) / log(10));
-
-	MAKE_1ARRAY(outfile, len);
-	if ((err = errno))
-		goto FREE_AND_RETURN;
-
 	if (opt->outfile_name != NULL) {
+		len = strlen(opt->outfile_name) + 23 + (int)(log(mod->K) / log(10));
+		MAKE_1ARRAY(outfile, len);
+		if ((err = errno))
+			goto FREE_AND_RETURN;
 		sprintf(outfile, "%s_admix_indivq_%d.indivq", opt->outfile_name, mod->K);
 	}
 	else {
+		len = strlen(opt->path) + strlen(opt->filename) + 23 + (int)(log(mod->K) / log(10));
+		MAKE_1ARRAY(outfile, len);
+		if ((err = errno))
+			goto FREE_AND_RETURN;
 		sprintf(outfile, "%s%s_admix_indivq_%d.indivq", opt->path, opt->filename, mod->K);
 	}
 	
@@ -552,18 +557,21 @@ int popq_mix(options* opt, data* dat, model* mod)
 	FILE* fp;
 	int err = NO_ERROR;
 
-	/* compute length of output filename */
-	len = strlen(opt->path) + strlen(opt->filename) + 15;
-
-	MAKE_1ARRAY(outfile, len);
-	if ((err = errno))
-		goto FREE_AND_RETURN;
-
 	/* write popq file */
 	if (opt->outfile_name != NULL) {
+		/* compute length of output filename */
+		len = strlen(opt->outfile_name) + 15;
+		MAKE_1ARRAY(outfile, len);
+		if ((err = errno))
+			goto FREE_AND_RETURN;
 		sprintf(outfile, "%s_mix_popq.popq", opt->outfile_name);
 	}
 	else {
+		/* compute length of output filename */
+		len = strlen(opt->path) + strlen(opt->filename) + 15;
+		MAKE_1ARRAY(outfile, len);
+		if ((err = errno))
+			goto FREE_AND_RETURN;
 		sprintf(outfile, "%s%s_mix_popq.popq", opt->path, opt->filename);
 	}
 	
@@ -625,14 +633,14 @@ int indivq_mix(options* opt, data* dat, model* mod)
 	char* outfile = NULL;
 	FILE* fp;
 
-	len = strlen(opt->path) + strlen(opt->filename) + 18;
-
-	MAKE_1ARRAY(outfile, len);
-
 	if (opt->outfile_name != NULL) {
+		len = strlen(opt->outfile_name) + 18;
+		MAKE_1ARRAY(outfile, len);
 		sprintf(outfile, "%s.mix_indivq.indivq", opt->outfile_name);
 	}
 	else {
+		len = strlen(opt->path) + strlen(opt->filename) + 18;
+		MAKE_1ARRAY(outfile, len);
 		sprintf(outfile, "%s%smix_indivq.indivq", opt->path, opt->filename);
 	}
 	if ((fp = fopen(outfile, "w")) == NULL) {
