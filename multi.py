@@ -2,7 +2,6 @@ import multiprocessing
 import time
 import random
 import subprocess
-import os
 
 unique_filename = "str"
 lock = multiprocessing.Lock()
