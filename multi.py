@@ -3,19 +3,24 @@ import time
 import random
 import subprocess
 
-unique_filename = "str"
+unique_filename = "test_unique"
 lock = multiprocessing.Lock()
+start = time.perf_counter()
 
 def multiclust(n):
     time.sleep(random.randint(1,3))
-    result = subprocess.run(["./multiclust", "-f", "SS2alleles001.str", "-s", "2", "-M"], capture_output=True, text=True)
+    result = subprocess.run(["./multiclust", "-f", "SS2alleles001.str", "-s", "2", "-M", "-o", unique_filename], capture_output=True, text=True)
     
+    worker_start = time.perf_counter()
     ##prints worker number and then multiclust output, but prints output after every single worker number
     ##print("This is worker [{0}]:\n".format(n) + result.stdout)
 
     lock.acquire()
     f = open(str(unique_filename) + "_stdout.txt", "a+")
-    f.write("[{0}]".format(n) + " " + result.stdout + "\n")
+    
+    ##clock function added to each worker to determine worker speed
+    worker_finish = time.perf_counter()
+    f.write("[{0}]".format(n) + " " + result.stdout + "Worker [{0}] time to complete: ".format(n) + str(worker_finish-worker_start) + " seconds\n\n")
     lock.release()
 
 def master():
@@ -41,9 +46,13 @@ def master():
 
     ##prints out worker information and logL before writing over file, used for debugging purposes
     ##print(worker_num, current_worker, best_logL, worker_num_line, best_logL_line)
+    
+    ##master will open a new file instead writing over all old worker files for debugging purposes
+    ##g = open(str(unique_filename) + "_stdout.txt", "w")
+    g = open(str(unique_filename) + "_master.txt", "w")
+    g.write("Worker number: " + worker_num_line + "\nBest log likelihood: " + best_logL_line)
 
-    g = open(str(unique_filename) + "_stdout.txt", "w")
-    g.write(worker_num_line + "\nBest log likelihood: " + best_logL_line)
+    
 
 processes = [ ]
 for i in range(10):
@@ -56,4 +65,10 @@ for one_process in processes:
 
 master()
 
-print("Done!")
+## time.perf_counter() is a precise clock we can use to measure runtime of workers + masters down to nanoseconds, used for debug
+finish = time.perf_counter()
+h = open(str(unique_filename) + "_master.txt", "a")
+h.write("\nTotal time to complete: " + str(finish-start) + " seconds")
+print("Done! Time to complete: " + str(finish-start) + " seconds")
+
+
