@@ -1,20 +1,26 @@
-print("started")
+import sys
+
+print("started", file=sys.stderr)
+
 ## read in file, split elements of each row into two lists
-f = open("african_readlines2.txt", "r+")
+f = open("african_readlines2.txt", "r+")	# [KSD] Not clear, what file is this? You should aim for a one-step conversion.
 new_str = ""
 str_list = []
 string = []
 build = f.readlines()
-for x in range(len(build)-1):
+for x in range(len(build)-1):			# [KSD] Why are you excluding the last line?
     for y in range(len(build[x])):
-        if build[x][y] != "	" and build[x][y] != "\t":
+        print(y)
+        if build[x][y] != "	" and build[x][y] != "\t":	# [KSD] Second case should be all you need.
             new_str += build[x][y]
-        if build[x][y] == "	" or build[x][y] == "\t":
+        if build[x][y] == "	" or build[x][y] == "\t":	# [KSD] This is just else of the above, right? Just use else:
             new_str += "\t"
             string.append(new_str)
             new_str = ""
     str_list.append(string)
     string = []
+
+sys.exit()
 
 mat_list = []
 pat_list = []
