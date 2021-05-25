@@ -17,7 +17,10 @@
 
 #include "multiclust.h"
 
-#define DEBUG
+//#define DEBUG
+#ifdef DEBUG
+int print_bits(size_t size, void *v);
+#endif
 
 double e_step_admixture_new(options *opt, data *dat, model *mod);
 double e_step_admixture_orig(options *opt, data *dat, model *mod);
@@ -28,6 +31,7 @@ void m_step_mixture(options *opt, data *dat, model *mod);
 double scale_log_sum(double *v, int n, double max_v);
 void internal_print_param(options *opt, data *dat, model *mod, double ***pklm, double **etaik, double *etak);
 int stop_condition(options *opt, model *mod, double loglik);
+
 
 #define e_step_admixture(A, B, C) e_step_admixture_orig(A, B, C)
 #define m_step_admixture(A, B, C) m_step_admixture_orig(A, B, C)
@@ -187,7 +191,6 @@ int em_step(options *opt, data *dat, model *mod)
 		m_step_admixture(opt, dat, mod);
 	} else {
 		ll = e_step_mixture(dat, mod);
-mmessage(DEBUG_MSG, NO_ERROR, "em_step(): ll=%f\n", ll);
 		m_step_mixture(opt, dat, mod);
 	}
 	return stop(opt, mod, ll);
@@ -322,7 +325,7 @@ double e_step_admixture_orig(options *opt, data *dat, model *mod)
 		for (l = 0; l < dat->L; l++) {
 			m_start = dat->L_alleles && dat->L_alleles[l][0] == MISSING;
 			for (m = m_start; m < dat->uniquealleles[l]; m++) {
-				if(dat->ILM[i][l][m] == 0) {
+				if (dat->ILM[i][l][m] == 0) {
 					for (k = 0; k < mod->K; k++)
 						mod->diklm[i][k][l][m] = 0;
 					continue;
@@ -764,17 +767,21 @@ double e_step_mixture(data *dat, model *mod)
 		for (k = 0; k < mod->K; k++) {
 			mod->vik[i][k] = log_etak[k];
 #ifdef DEBUG
-if (fabs(mod->vik[i][k]) > DBL_MAX || isnan(mod->vik[i][k])) {
+if (!isfinite(mod->vik[i][k])) {
 	mmessage(DEBUG_MSG, NO_ERROR, "log(vik[%d,%d]) is not finite after initialization!\n", i, k);
 	exit(0);
 }
 #endif
-fprintf(stderr, "i=%d, k=%d: %f", i, k, mod->vik[i][k]);
 			for (l = 0; l < dat->L; l++) {
 				for (m = dat->L_alleles && dat->L_alleles[l][0] == MISSING;
 					m < dat->uniquealleles[l]; m++) {
-fprintf(stderr, "l=%d, m=%d", l, m);
-					if(dat->ILM[i][l][m] == 0)
+					if (dat->ILM[i][l][m] == 0 ||
+#ifndef OLDWAY
+						mod->vpklm[mod->findex][k][l][m] == 0.0
+#else
+						mod->pKLM[k][l][m] == 0.0
+#endif
+					)
 						continue;
 					mod->vik[i][k] += dat->ILM[i][l][m]
 #ifndef OLDWAY
@@ -782,10 +789,9 @@ fprintf(stderr, "l=%d, m=%d", l, m);
 #else
 						* log(mod->pKLM[k][l][m]);
 #endif
-fprintf(stderr, ": %f\n", mod->vik[i][k]);
 #ifdef DEBUG
-if (fabs(mod->vik[i][k]) > DBL_MAX || isnan(mod->vik[i][k])) {
-	mmessage(DEBUG_MSG, NO_ERROR, "log(vik[%d, %d]) is not finite after locus %d, allele %d (%d, %f)!\n", i, k, l, m, dat->ILM[i][l][m], mod->vpklm[mod->findex][k][l][m]);
+if (!isfinite(mod->vik[i][k])) {
+	mmessage(DEBUG_MSG, NO_ERROR, "log(vik[%d, %d]) is not finite after locus %d, allele %d (ILM=%d, pklm=%f)!\n", i, k, l, m, dat->ILM[i][l][m], mod->vpklm[mod->findex][k][l][m]);
 	exit(0);
 }
 #endif
@@ -793,8 +799,6 @@ if (fabs(mod->vik[i][k]) > DBL_MAX || isnan(mod->vik[i][k])) {
 			}
 			if (mod->vik[i][k] > max_ll)
 				max_ll = mod->vik[i][k];
-fprintf(stderr, "\t-> %f\n", mod->vik[i][k]);
-if (isnan(max_ll) || isnan(mod->vik[i][k])) exit(0);
 		}
 
 		/* normalize (possibly scaling) */
@@ -803,16 +807,28 @@ if (isnan(max_ll) || isnan(mod->vik[i][k])) exit(0);
  */
 		temp = 0;
 		for(k = 0; k < mod->K; k++) {
-//i=850, k=0: -nan -nan -nan (-2670.397140)
-fprintf(stderr, "i=%d, k=%d: %f", i, k, mod->vik[i][k]);
+#ifdef DEBUG
+fprintf(stderr, "i=%d, k=%d: (vik=%f; %d %d)", i, k, mod->vik[i][k], isnan(mod->vik[i][k]), mod->vik[i][k] == mod->vik[i][k]);
+#endif
 			mod->vik[i][k] = exp(mod->vik[i][k] - max_ll);
 			temp += mod->vik[i][k];
-fprintf(stderr, " %e %e (%f)\n", mod->vik[i][k], temp, max_ll);
-if (isnan(temp) || fabs(temp) > DBL_MAX)
+#ifdef DEBUG
+fprintf(stderr, " (vik=%e; %d %d) (temp=%e; %d) (max_ll=%f; %d)\n", mod->vik[i][k], isnan(mod->vik[i][k]), mod->vik[i][k] == mod->vik[i][k], temp, isnan(temp), max_ll, isnan(max_ll));
+fprintf(stderr, "mod->vik[%d][%d]: ", i, k);
+if (print_bits(sizeof(mod->vik[i][k]), (void *) &mod->vik[i][k]))
 	exit(0);
+fprintf(stderr, "temp: ");
+if (print_bits(sizeof(temp), (void *) &temp))
+	exit(0);
+fprintf(stderr, "max_ll: ");
+if (print_bits(sizeof(max_ll), (void *) &max_ll))
+	exit(0);
+if (isnan(temp) || isnan(mod->vik[i][k]) || isnan(max_ll))
+	exit(0);
+#endif
 		}
 #ifdef DEBUG
-if (fabs(temp) > DBL_MAX || isnan(temp)) {
+if (isnan(temp) || temp == 0.0) {
 	mmessage(DEBUG_MSG, NO_ERROR, "temp is not finite for individual %d!\n", i);
 	exit(0);
 }
@@ -822,9 +838,9 @@ if (fabs(temp) > DBL_MAX || isnan(temp)) {
 
 		/* restore scaling to log likelihood */
 		loglik += log(temp) + max_ll;
-fprintf(stderr, "%d: %f + %f = %f\n", i, log(temp), max_ll, loglik);
 #ifdef DEBUG
-if (fabs(loglik) > DBL_MAX || isnan(loglik)) {
+fprintf(stderr, "%d: %f + %f = %f\n", i, log(temp), max_ll, loglik);
+if (isnan(loglik)) {
 	mmessage(DEBUG_MSG, NO_ERROR, "loglik is not finite for individual %d (temp=%e, max_ll=%f)!\n", i, temp, max_ll);
 	exit(0);
 }
@@ -858,10 +874,6 @@ void m_step_mixture(options *opt, data *dat, model *mod)
 		for (i = 0; i < dat->I; i++) {
 #ifndef OLDWAY
 			mod->vetak[mod->tindex][k] += mod->vik[i][k];
-			if (isnan(mod->vik[i][k])) {
-				fprintf(stderr, "mod->vik[%d][%d]: %f\n", i, k, mod->vik[i][k]);
-				exit(0);
-			}
 #else
 			mod->etak[k] += mod->vik[i][k];
 #endif
@@ -875,11 +887,19 @@ void m_step_mixture(options *opt, data *dat, model *mod)
 		if (maxl < mod->etak[k])
 			maxl = mod->etak[k];
 #endif
+#ifdef DEBUG
+		if (isnan(temp)) {
+			mmessage(DEBUG_MSG, NO_ERROR, "m_step_mixture, computing eta[%d]: temp=%f\n", k, temp);
+			exit(0);
+		}
+#endif
 	}
 	for (k = 0; k < mod->K; k++) {
 #ifndef OLDWAY
 		mod->vetak[mod->tindex][k] /= temp;
+#ifdef DEBUG
 		fprintf(stderr, "mod->vetak[%d][%d] = %e (temp = %e; maxl = %e)\n", mod->tindex, k, mod->vetak[mod->tindex][k], temp, maxl);
+#endif
 #else
 		mod->etak[k] /= temp;
 #endif
@@ -894,24 +914,30 @@ void m_step_mixture(options *opt, data *dat, model *mod)
 			temp = 0.0;
 			for (m = m_start; m < dat->uniquealleles[l]; m++) {
 #ifndef OLDWAY
-				mod->vpklm[mod->tindex][k][l][m] = 0;//opt->p_lower_bound;
+				mod->vpklm[mod->tindex][k][l][m] = opt->p_lower_bound;
 #else
-				mod->pKLM[k][l][m] = 0;//opt->p_lower_bound;
+				mod->pKLM[k][l][m] = opt->p_lower_bound;
 #endif
 				for (i = 0; i < dat->I; i++) {
-					if(dat->ILM[i][l][m])
+					if (dat->ILM[i][l][m])
 #ifndef OLDWAY
-						mod->vpklm[mod->tindex][k][l][m] +=
+						mod->vpklm[mod->tindex][k][l][m]
 #else
-						mod->pKLM[k][l][m] +=
+						mod->pKLM[k][l][m]
 #endif
-							mod->vik[i][k]
+							+= mod->vik[i][k]
 							* dat->ILM[i][l][m];
 				}
 #ifndef OLDWAY
 				temp += mod->vpklm[mod->tindex][k][l][m];
 #else
 				temp += mod->pKLM[k][l][m];
+#endif
+#ifdef DEBUG
+				if (isnan(temp)) {
+					mmessage(DEBUG_MSG, NO_ERROR, "m_step_mixture, compute pklm[%d][%d][%d]: temp=%f\n", k, l, m, temp);
+					exit(0);
+				}
 #endif
 			}
 			for (m = m_start; m < dat->uniquealleles[l]; m++)
@@ -1263,3 +1289,28 @@ void internal_print_param(options *opt, data *dat, model *mod, double ***pklm, d
 			fprintf(stderr, "\n");
 		}
 } /* internal_print_param */
+
+#ifdef DEBUG
+int print_bits(size_t size, void *v)
+{
+        char *cv = (char *) v;
+	int is_nan = 1;
+
+        for (size_t i = size - 1; ; --i) {
+                for (int j = 7; j >= 0; --j) {
+                        printf("%d", cv[i] >> j & 1);
+			if (i == size - 1 && !(cv[i] >> j & 1))
+				is_nan = 0;
+			else if (i == size - 2 && j == 7 && !(cv[i] >> j & 1))
+				is_nan = 0;
+		}
+                if (i)
+                        printf(" ");
+		else
+			break;
+        }
+        printf("\n");
+
+	return is_nan;
+} /* print_bits */
+#endif
