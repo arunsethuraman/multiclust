@@ -17,6 +17,8 @@
 
 #include "multiclust.h"
 
+#define DEBUG
+
 double e_step_admixture_new(options *opt, data *dat, model *mod);
 double e_step_admixture_orig(options *opt, data *dat, model *mod);
 void m_step_admixture_new(options *opt, data *dat, model *mod);
@@ -179,11 +181,13 @@ int converged(options *opt, model *mod, double loglik)
 int em_step(options *opt, data *dat, model *mod)
 {
 	double ll;
+
 	if (opt->admixture) {
 		ll = e_step_admixture(opt, dat, mod);
 		m_step_admixture(opt, dat, mod);
 	} else {
 		ll = e_step_mixture(dat, mod);
+mmessage(DEBUG_MSG, NO_ERROR, "em_step(): ll=%f\n", ll);
 		m_step_mixture(opt, dat, mod);
 	}
 	return stop(opt, mod, ll);
@@ -324,7 +328,7 @@ double e_step_admixture_orig(options *opt, data *dat, model *mod)
 					continue;
 				}
 /*
-				max_ldilmk = -Inf;
+				max_ldilmk = -INFINITY;
 */
 				tmp = 0;
 				if (debug)
@@ -742,10 +746,9 @@ void m_step_admixture_orig(options *opt, data *dat, model *mod)
 double e_step_mixture(data *dat, model *mod)
 {
 	int i, l, m, k;
-	double log_etak[mod->K], temp_vik[mod->K];
+	double log_etak[mod->K];
 	double temp;
-	double scale, max_ll = -Inf;
-	double loglik = 0;
+	double max_ll, loglik = 0;
 
 	for (k = 0; k < mod->K; k++)
 #ifndef OLDWAY
@@ -755,36 +758,77 @@ double e_step_mixture(data *dat, model *mod)
 #endif
 
 	for (i = 0; i < dat->I; i++) {
+		max_ll = -INFINITY;
+
 		/* numerators */
 		for (k = 0; k < mod->K; k++) {
-			temp_vik[k] = log_etak[k];
+			mod->vik[i][k] = log_etak[k];
+#ifdef DEBUG
+if (fabs(mod->vik[i][k]) > DBL_MAX || isnan(mod->vik[i][k])) {
+	mmessage(DEBUG_MSG, NO_ERROR, "log(vik[%d,%d]) is not finite after initialization!\n", i, k);
+	exit(0);
+}
+#endif
+fprintf(stderr, "i=%d, k=%d: %f", i, k, mod->vik[i][k]);
 			for (l = 0; l < dat->L; l++) {
 				for (m = dat->L_alleles && dat->L_alleles[l][0] == MISSING;
 					m < dat->uniquealleles[l]; m++) {
+fprintf(stderr, "l=%d, m=%d", l, m);
 					if(dat->ILM[i][l][m] == 0)
 						continue;
-					temp_vik[k] += dat->ILM[i][l][m]
+					mod->vik[i][k] += dat->ILM[i][l][m]
 #ifndef OLDWAY
 						* log(mod->vpklm[mod->findex][k][l][m]);
 #else
 						* log(mod->pKLM[k][l][m]);
 #endif
+fprintf(stderr, ": %f\n", mod->vik[i][k]);
+#ifdef DEBUG
+if (fabs(mod->vik[i][k]) > DBL_MAX || isnan(mod->vik[i][k])) {
+	mmessage(DEBUG_MSG, NO_ERROR, "log(vik[%d, %d]) is not finite after locus %d, allele %d (%d, %f)!\n", i, k, l, m, dat->ILM[i][l][m], mod->vpklm[mod->findex][k][l][m]);
+	exit(0);
+}
+#endif
 				}
 			}
-			if (temp_vik[k] > max_ll)
-				max_ll = temp_vik[k];
+			if (mod->vik[i][k] > max_ll)
+				max_ll = mod->vik[i][k];
+fprintf(stderr, "\t-> %f\n", mod->vik[i][k]);
+if (isnan(max_ll) || isnan(mod->vik[i][k])) exit(0);
 		}
 
 		/* normalize (possibly scaling) */
-		scale = scale_log_sum(temp_vik, mod->K, max_ll);
+/*
+		double scale = scale_log_sum(mod->vik[i], mod->K, max_ll);
+ */
 		temp = 0;
+		for(k = 0; k < mod->K; k++) {
+//i=850, k=0: -nan -nan -nan (-2670.397140)
+fprintf(stderr, "i=%d, k=%d: %f", i, k, mod->vik[i][k]);
+			mod->vik[i][k] = exp(mod->vik[i][k] - max_ll);
+			temp += mod->vik[i][k];
+fprintf(stderr, " %e %e (%f)\n", mod->vik[i][k], temp, max_ll);
+if (isnan(temp) || fabs(temp) > DBL_MAX)
+	exit(0);
+		}
+#ifdef DEBUG
+if (fabs(temp) > DBL_MAX || isnan(temp)) {
+	mmessage(DEBUG_MSG, NO_ERROR, "temp is not finite for individual %d!\n", i);
+	exit(0);
+}
+#endif
 		for(k = 0; k < mod->K; k++)
-			temp += exp(temp_vik[k]);
-		for(k = 0; k < mod->K; k++)
-			mod->vik[i][k] = exp(temp_vik[k])/temp;
+			mod->vik[i][k] /= temp;
 
 		/* restore scaling to log likelihood */
-		loglik += log(temp) + scale;
+		loglik += log(temp) + max_ll;
+fprintf(stderr, "%d: %f + %f = %f\n", i, log(temp), max_ll, loglik);
+#ifdef DEBUG
+if (fabs(loglik) > DBL_MAX || isnan(loglik)) {
+	mmessage(DEBUG_MSG, NO_ERROR, "loglik is not finite for individual %d (temp=%e, max_ll=%f)!\n", i, temp, max_ll);
+	exit(0);
+}
+#endif
 	}
 
 	return loglik;
@@ -801,7 +845,7 @@ double e_step_mixture(data *dat, model *mod)
 void m_step_mixture(options *opt, data *dat, model *mod)
 {
 	int i, l, m, k, m_start;
-	double temp;
+	double temp, maxl = -INFINITY;
 
 	/* estimate eta */
 	temp = 0.0;
@@ -811,24 +855,35 @@ void m_step_mixture(options *opt, data *dat, model *mod)
 #else
 		mod->etak[k] = 0;//opt->eta_lower_bound;
 #endif
-		for (i = 0; i < dat->I; i++)
+		for (i = 0; i < dat->I; i++) {
 #ifndef OLDWAY
 			mod->vetak[mod->tindex][k] += mod->vik[i][k];
+			if (isnan(mod->vik[i][k])) {
+				fprintf(stderr, "mod->vik[%d][%d]: %f\n", i, k, mod->vik[i][k]);
+				exit(0);
+			}
 #else
 			mod->etak[k] += mod->vik[i][k];
 #endif
+		}
 #ifndef OLDWAY
 		temp += mod->vetak[mod->tindex][k];
+		if (maxl < mod->vetak[mod->tindex][k])
+			maxl = mod->vetak[mod->tindex][k];
 #else
 		temp += mod->etak[k];
+		if (maxl < mod->etak[k])
+			maxl = mod->etak[k];
 #endif
 	}
-	for (k = 0; k < mod->K; k++)
+	for (k = 0; k < mod->K; k++) {
 #ifndef OLDWAY
 		mod->vetak[mod->tindex][k] /= temp;
+		fprintf(stderr, "mod->vetak[%d][%d] = %e (temp = %e; maxl = %e)\n", mod->tindex, k, mod->vetak[mod->tindex][k], temp, maxl);
 #else
 		mod->etak[k] /= temp;
 #endif
+	}
 	simplex_project_eta(mod, opt, 0);
 
 	/* estimate p_{klm} */

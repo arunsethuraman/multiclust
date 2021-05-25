@@ -14,6 +14,7 @@
  *        current best log likelihood has been observed X times
  */
 
+#include <math.h>
 
 #include "cline.h"	/* command line */
 #include "multiclust.h"
@@ -99,10 +100,19 @@ int main(int argc, const char** argv)
 	/* read data */
 	if ((err = read_file(opt, dat)))
 		goto FREE_AND_EXIT;
+	
+	if (opt->verbosity >= TALKATIVE)
+		mmessage(INFO_MSG, NO_ERROR, "Finished reading data: %u "
+			"%u-ploid individuals at %u loci.\n", dat->I,
+							dat->ploidy, dat->L);
 
 	/* finalize settings that refer to data; check settings */
 	if ((err = synchronize(opt, dat, mod)))
 		goto FREE_AND_EXIT;
+
+	if (opt->verbosity >= TALKATIVE)
+		mmessage(INFO_MSG, NO_ERROR, "Finished checking settings: using"
+			" %s.\n", opt->accel_name);
 
 	/* estimate the model(s) using the observed data */
 	if (opt->n_repeat > 1 && (err = timed_model_estimation(opt, dat, mod)))
@@ -167,10 +177,10 @@ int timed_model_estimation(options* opt, data* dat, model* mod)
 	double sum_ll2 = 0;
 	double sum_ar = 0;
 	double sum_ar2 = 0;
-	double max_ll = -Inf;
+	double max_ll = -INFINITY;
 	double min_aic = 0, min_bic = 0;
 	double max_ar = -1;
-	double first_ll = -Inf;
+	double first_ll = -INFINITY;
 	double max_ll_rand = 0;
 	int first_hit_index = 0;
 	int converged_repeats = 0;
@@ -323,11 +333,11 @@ int estimate_model(options* opt, data* dat, model* mod, int bootstrap)
 	/* initialize: if bootstrap, comparing H0: K = mod->null_K vs.
 	 * Ha: K = mod->alt_K; otherwise running for 1, 2, ..., opt->max_K
 	 * so log likelihood will increase as progress through models */
-	mod->max_logL = -Inf;
-	mod->max_logL_H0 = -Inf;
+	mod->max_logL = -INFINITY;
+	mod->max_logL_H0 = -INFINITY;
 	mod->K = opt->n_bootstrap ? mod->null_K : opt->min_K;
 	dat->max_M = dat->M;
-	min_aic = min_bic = Inf;
+	min_aic = min_bic = INFINITY;
 
 	//if(opt->block_relax == 1)
 	//	mod->K = 2;
@@ -424,7 +434,7 @@ int maximize_likelihood(options* opt, data* dat, model* mod, int bootstrap)
 
 
 	/* resetting statistics recorded across multiple initializations */
-	mod->first_max_logL = -Inf;
+	mod->first_max_logL = -INFINITY;
 	mod->n_init = 0;
 	mod->n_total_iter = 0;
 	mod->n_maxll_times = 0;
@@ -435,7 +445,7 @@ int maximize_likelihood(options* opt, data* dat, model* mod, int bootstrap)
 	mod->ever_converged = 0;
 
 	mod->start = clock();
-	for (i = 0; opt->target_revisit || opt->target_ll		/* targeting */
+	for (i = 0; opt->target_revisit || opt->target_ll	/* targeting */
 		|| opt->n_seconds || i < opt->n_init; i++) {	/* timing */
 		mod->current_i = 0;
 		mod->current_l = 0;
@@ -732,7 +742,8 @@ int synchronize(options* opt, data* dat, model* mod)
 	int err = NO_ERROR;
 
 	/* [KSD TODO: there is really not much thinking in this...] */
-	opt->lower_bound = MIN(opt->lower_bound, 1.0 / dat->I / dat->ploidy - 0.5 / dat->I / dat->ploidy);
+	opt->lower_bound = MIN(opt->lower_bound,
+		1.0 / dat->I / dat->ploidy - 0.5 / dat->I / dat->ploidy);
 	opt->eta_lower_bound = opt->lower_bound;
 	opt->p_lower_bound = opt->lower_bound;
 
@@ -745,9 +756,11 @@ int synchronize(options* opt, data* dat, model* mod)
 		if (opt->accel_name)
 			free(opt->accel_name);
 		MAKE_1ARRAY(opt->accel_abbreviation, 4 + (int)log10(opt->q));
-		MAKE_1ARRAY(opt->accel_name, strlen(accel_method_names[QN]) + 7 + (int)log10(opt->q));
+		MAKE_1ARRAY(opt->accel_name, strlen(accel_method_names[QN])
+						+ 7 + (int)log10(opt->q));
 		sprintf(opt->accel_abbreviation, "Q%d", opt->q);
-		sprintf(opt->accel_name, "%s (q=%d)", accel_method_names[QN], opt->q);
+		sprintf(opt->accel_name, "%s (q=%d)", accel_method_names[QN],
+									opt->q);
 		if (mod->Ainv)
 			FREE_1ARRAY(mod->Ainv);
 		if (mod->cutu)
@@ -771,11 +784,13 @@ int synchronize(options* opt, data* dat, model* mod)
 				"without linking to lapack.\n");
 		MAKE_1ARRAY(mod->A, opt->q * opt->q);
 #endif
-	}
-	else {
-		MAKE_1ARRAY(opt->accel_abbreviation, strlen(accel_method_abbreviations[opt->accel_scheme]) + 1);
-		MAKE_1ARRAY(opt->accel_name, strlen(accel_method_names[opt->accel_scheme]) + 1);
-		strcpy(opt->accel_abbreviation, accel_method_abbreviations[opt->accel_scheme]);
+	} else {
+		MAKE_1ARRAY(opt->accel_abbreviation, strlen(
+			accel_method_abbreviations[opt->accel_scheme]) + 1);
+		MAKE_1ARRAY(opt->accel_name,
+			strlen(accel_method_names[opt->accel_scheme]) + 1);
+		strcpy(opt->accel_abbreviation,
+			accel_method_abbreviations[opt->accel_scheme]);
 		strcpy(opt->accel_name, accel_method_names[opt->accel_scheme]);
 	}
 
@@ -1047,8 +1062,8 @@ int make_model(model** mod)
 	(*mod)->current_k = 0;
 	(*mod)->etaupdate = 0;
 	(*mod)->converged = 0;
-	(*mod)->max_logL = -Inf;
-	(*mod)->first_max_logL = -Inf;
+	(*mod)->max_logL = -INFINITY;
+	(*mod)->first_max_logL = -INFINITY;
 	(*mod)->n_iter = 0;
 	(*mod)->n_max_iter = 0;
 	(*mod)->n_total_iter = 0;
@@ -1484,6 +1499,9 @@ int parse_options(options* opt, data* dat, int argc, const char** argv)
 					i--;
 				}
 			}
+			if (opt->verbosity >= TALKATIVE)
+				mmessage(INFO_MSG, DEBUG_MSG, "Set verbosity "
+					"level to %u.\n", opt->verbosity);
 			break;
 		case 'w':
 			while (++i < argc && argv[i][0] != '-') {

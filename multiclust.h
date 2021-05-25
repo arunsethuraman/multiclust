@@ -20,7 +20,6 @@
 	#include <stdlib.h>
 	#include <math.h>
 	#include <float.h>
-	#define Inf DBL_MAX
 #endif
 
 #define e_step_admixture(A, B, C) e_step_admixture_orig(A, B, C)

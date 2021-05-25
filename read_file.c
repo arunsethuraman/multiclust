@@ -55,8 +55,16 @@ int read_file(options *opt, data *dat)
 	if (opt->R_format)
 		dat->L -= 2; /* KLUDGE: uses R-formatted Structure file format */
 
+	if (opt->verbosity >= TALKATIVE)
+		mmessage(INFO_MSG, NO_ERROR, "Input file '%s' has %u loci.\n",
+							opt->filename, dat->L);
+
 	/* count number of individuals sampled */
 	dat->I = count_lines(f1);	/* f1 now at EOF */
+
+	if (opt->verbosity >= TALKATIVE)
+		mmessage(INFO_MSG, NO_ERROR, "Input file '%s' has %u "
+				"individuals.\n", opt->filename, dat->I);
 
 	/* self-consistency check on amount of data */
 	if ((dat->I % dat->ploidy))
@@ -143,6 +151,10 @@ int read_file(options *opt, data *dat)
 			}
 			fgetc(f1);	/* clear new line */
 		}
+	
+		if (!(i % dat->ploidy) && opt->verbosity >= VERBOSE)
+			mmessage(INFO_MSG, NO_ERROR, "Read individual %u.\n",
+							i / dat->ploidy + 1);
 
 		if (feof(f1))
 			break;
@@ -150,11 +162,20 @@ int read_file(options *opt, data *dat)
 
 	fclose(f1);
 
+	if (opt->verbosity >= TALKATIVE)
+		mmessage(INFO_MSG, NO_ERROR, "Finished reading %u populations "
+				"from '%s'.\n", dat->numpops, opt->filename);
+
+
 	/* count no. individuals observed at each locale */
 	CMAKE_1ARRAY(dat->i_p, dat->numpops);
 	
 	for (i=0; i<dat->I; i++)
 		dat->i_p[dat->idv[i].locale]++;
+
+	if (opt->verbosity >= TALKATIVE)
+		mmessage(INFO_MSG, NO_ERROR, "Finished computing population "
+							"sample sizes.\n");
 
 	if (debug)
 		for (i=0; i<dat->I; i++)
@@ -171,8 +192,17 @@ int read_file(options *opt, data *dat)
 	if ((err = summarize_alleles(opt, dat)))
                 return err;
 
+	if (opt->verbosity >= TALKATIVE)
+		mmessage(INFO_MSG, NO_ERROR, "Finished summarizing alleles: "
+			"maximum number of alleles at a single locus is %u.\n",
+									dat->M);
+
 	if ((err = sufficient_statistics(dat)))
 		return err;
+
+	if (opt->verbosity >= TALKATIVE)
+		mmessage(INFO_MSG, NO_ERROR, "Finished computing sufficient "
+							"statistics.\n");
 
 	return err;
 
@@ -232,6 +262,9 @@ int summarize_alleles(options *opt, data *dat)
 	if (!opt->alleles_are_indices)
 		MAKE_1ARRAY(locusgeno, n_haplotypes);
 
+	if (opt->verbosity >= TALKATIVE)
+		mmessage(INFO_MSG, NO_ERROR, "Processing loci ");
+
 	dat->M = 0;
 	for (l = 0; l < dat->L; l++) {
 		if (opt->alleles_are_indices) {
@@ -268,9 +301,16 @@ int summarize_alleles(options *opt, data *dat)
 		}
 		if (dat->uniquealleles[l] > dat->M)
 			dat->M = dat->uniquealleles[l];
+		if (opt->verbosity >= TALKATIVE && !(l % 100))
+			fprintf(stderr, ".");
 	}
+	if (opt->verbosity >= TALKATIVE)
+		fprintf(stderr, "\n");
 
 	if (!opt->alleles_are_indices) {
+		if (opt->verbosity >= TALKATIVE)
+			mmessage(INFO_MSG, NO_ERROR, "Sorting alleles ");
+
 		/* allocate jagged array listing unique alleles at each locus */
 		MAKE_2JAGGED_ARRAY(dat->L_alleles, dat->L, dat->uniquealleles);
 	
@@ -287,7 +327,11 @@ int summarize_alleles(options *opt, data *dat)
 			for (k = 1; k < n_haplotypes; k++)
 				if (locusgeno[k] != locusgeno[k - 1])
 					dat->L_alleles[l][m++] = locusgeno[k];
+			if (opt->verbosity >= TALKATIVE && !(l % 100))
+				fprintf(stderr, ".");
 		}
+		if (opt->verbosity >= TALKATIVE)
+			fprintf(stderr, "\n");
 	}
 
 	/* could now rewrite IL to be indices of L_alleles */
@@ -345,9 +389,9 @@ int sufficient_statistics(data *dat)
 					dat->ILM[i][l][dat->IL[j][l]]++;
 			else {
 				for (m = 0; m < dat->uniquealleles[l]; m++)
-									/* allele */
+								/* allele */
 					for (j = z_start; j < z_end; j++)
-									/* haplotype */
+								/* haplotype */
 						if (dat->IL[j][l]
 							== dat->L_alleles[l][m])
 							dat->ILM[i][l][m]++;

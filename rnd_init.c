@@ -24,6 +24,8 @@
  * the kind of smoothing used in this file.
  */
 
+#include <math.h>
+
 #include "multiclust.h"
 #define MAKE_1ARRAY MAKE_1ARRAY_RETURN
 
@@ -54,7 +56,7 @@ int initialize_model(options *opt, data *dat, model *mod)
 
 	/* reset model state */
 	mod->n_iter = 0;
-	mod->logL = -Inf;
+	mod->logL = -INFINITY;
 	mod->converged = 0;
 
 	/* reset indices of parameter copies if using acceleration */
@@ -124,7 +126,7 @@ int randem_initialize_mixture(options *opt, data *dat, model *mod)
 	int n_init = mod->K > 1 ? opt->n_rand_em_init : 1;
 	int *I_K;
 	double logL;
-	double max_logL = -Inf;
+	double max_logL = -INFINITY;
 
 	MAKE_1ARRAY(I_K, dat->I);
 
@@ -221,7 +223,7 @@ void random_individual_center(data *dat, model *mod)
 			continue;
 
 		/* find closest center */
-		min_count_diff = Inf;
+		min_count_diff = INFINITY;
 		for (k = 0; k < mod->K; k++) {
 			/* this individual is a center */
 			if (i == center[k]) {
@@ -414,7 +416,7 @@ int randem_initialize_admixture(options *opt, data *dat, model *mod)
 	int n_haplotypes = dat->I * dat->ploidy;
 	int **IL_K_max;
 	double logL;
-	double max_logL = -Inf;
+	double max_logL = -INFINITY;
 
 	MAKE_2ARRAY(IL_K_max, n_haplotypes, dat->L);
 

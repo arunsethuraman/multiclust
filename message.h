@@ -79,4 +79,10 @@ enum {	ABSOLUTE_SILENCE,	/*!< only output through files */
 
 int message(FILE *, const char *, const char *, int, int, int, const char *, ...);
 
+/**
+ * Print a formatted message to stderr.
+ */
+#define mmessage(type, err, ...) message(stderr, __FILE__, __func__,  __LINE__, (type), (err),  __VA_ARGS__)
+
+
 #endif
