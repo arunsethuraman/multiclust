@@ -161,6 +161,7 @@ struct _options {
 	const char *filename;		/*!< data file name */
 	const char *path;		/*!< location of data files */
 	int R_format;			/*!< data file in R format */
+	int interleaved;		/*!< chromosomes interleaved */
 	int alleles_are_indices;	/*!< allele names are indices */
 	unsigned int seed;		/*!< random number seed */
 	int n_bootstrap;		/*!< no. of bootstrap trials */

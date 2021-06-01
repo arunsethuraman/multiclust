@@ -20,7 +20,7 @@ int sufficient_statistics(data *dat);
 int count_columns(FILE *fp);
 int count_lines(FILE *fp);
 void skip_line(FILE *fp);
-int read_next_word(FILE *fp, const char *filename, char **word);
+int read_next_word(FILE *fp, char **word);
 int add_to_string_set(char ***list, int *len, char *str, int *loc);
 void bubbleSort(int *numbers, int array_size);
 
@@ -42,6 +42,7 @@ int read_file(options *opt, data *dat)
 	int n_haplotypes;	/* total number of observed haplotypes */
 	int debug = 0;		/* debugging level */
 	char *locale = NULL;	/* read-in locale */
+	char *name1 = NULL, *name2 = NULL;
 	int err = NO_ERROR;
 	char a;
 	
@@ -50,33 +51,66 @@ int read_file(options *opt, data *dat)
 		return message(stderr, __FILE__, __func__, __LINE__,
 			ERROR_MSG, FILE_OPEN_ERROR, opt->filename);
 
-	/* count number of loci */
+	/* count number of loci (or loci * ploidy)*/
 	dat->L = count_columns(f1);	/* f1 on first char of next line */
 	if (opt->R_format)
 		dat->L -= 2; /* KLUDGE: uses R-formatted Structure file format */
 
 	if (opt->verbosity >= TALKATIVE)
-		mmessage(INFO_MSG, NO_ERROR, "Input file '%s' has %u loci.\n",
-							opt->filename, dat->L);
+		mmessage(INFO_MSG, NO_ERROR, "Input file '%s' has %u "
+				"columns.\n", opt->filename, dat->L + 2);
+
+	if ((err = read_next_word(f1, &name1)))
+		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
+			err, "Failed to read first individual's name in file "
+						"'%s'\n", opt->filename);
+	skip_line(f1);
+	if ((err = read_next_word(f1, &name2)))
+		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
+			err, "Failed to read second individual's name in file "
+						"'%s'\n", opt->filename);
+
+	if (strcmp(name1, name2))
+		opt->interleaved = 1;
+
+	free(name1);
+	free(name2);
 
 	/* count number of individuals sampled */
-	dat->I = count_lines(f1);	/* f1 now at EOF */
+	dat->I = count_lines(f1) + 1;	/* f1 now at EOF */
 
 	if (opt->verbosity >= TALKATIVE)
 		mmessage(INFO_MSG, NO_ERROR, "Input file '%s' has %u "
-				"individuals.\n", opt->filename, dat->I);
+					"lines.\n", opt->filename, dat->I);
 
 	/* self-consistency check on amount of data */
-	if ((dat->I % dat->ploidy))
+	if (!opt->interleaved && (dat->I % dat->ploidy))
 		return message(stderr, __FILE__, __func__, __LINE__,
 			ERROR_MSG, FILE_FORMAT_ERROR, "number of lines (%d) in "
-			"'%s' is not a multiple of ploidy (%d)\n", dat->I, opt->filename, 
-			dat->ploidy);
+			"'%s' is not a multiple of ploidy (%d)\n", dat->I,
+						opt->filename, dat->ploidy);
+	else if (opt->interleaved && (dat->L % dat->ploidy))
+		return message(stderr, __FILE__, __func__, __LINE__,
+			ERROR_MSG, FILE_FORMAT_ERROR, "number of columns (%u) "
+			"in '%s' is not a multiple of ploidy (%d)\n", dat->L,
+						opt->filename, dat->ploidy);
 
 	/* allocate memory for raw data */
-	n_haplotypes = dat->I;
+	if (opt->interleaved) {
+		n_haplotypes = dat->I * dat->ploidy;
+		dat->L /= dat->ploidy;
+	} else {
+		n_haplotypes = dat->I;
+		dat->I /= dat->ploidy;
+	}
+
+	if (opt->verbosity >= TALKATIVE)
+		mmessage(INFO_MSG, NO_ERROR, "Input file '%s' has %u "
+				"haplotypes, %u individuals.\n", opt->filename,
+							n_haplotypes, dat->I);
+
+
 	MAKE_2ARRAY(dat->IL, n_haplotypes, dat->L);
-	dat->I /= dat->ploidy;
 
 	if (debug)
 		message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
@@ -97,18 +131,20 @@ int read_file(options *opt, data *dat)
 	fseek(f1, 0, SEEK_SET);
 	skip_line(f1);
 
-	for (i=0; i<n_haplotypes; i++) {
+	for (i=0; i<n_haplotypes; i += opt->interleaved ? 1 : dat->ploidy) {
 
 		/* first haplotype of individual idv */
-		if (!(i % dat->ploidy)) {
+		if (opt->interleaved || !(i % dat->ploidy)) {
 
 			/* read name of individual */
-			if ((err = read_next_word(f1, opt->filename,
-				&(dat->idv[idv].name))))
+			if ((err = read_next_word(f1, &(dat->idv[idv].name)))) {
+				if (feof(f1))
+					break;
 				return err;
+			}
 
 			/* read locale of individual */
-			if ((err = read_next_word(f1, opt->filename, &locale)))
+			if ((err = read_next_word(f1, &locale)))
 				return err;
 
 			/* add (new) locale to locale set */
@@ -142,22 +178,26 @@ int read_file(options *opt, data *dat)
 			break;
 
 		for (l=0; l<dat->L; l++) {
-			if (fscanf(f1, "%d", &(dat->IL[i][l])) != 1) {
-				return message(stderr, __FILE__, __func__,
-					__LINE__, ERROR_MSG, FILE_FORMAT_ERROR,
-					"failed to read locus %d of haplotype "
-					"%d in file '%s'.  Check option -R.\n", 
-					l+1, i+1, opt->filename);
-			}
+			for (j = 0; j < (opt->interleaved ? dat->ploidy : 1); ++j)
+				if (fscanf(f1, "%d", &(dat->IL[i + j][l])) != 1)
+					return message(stderr, __FILE__,
+						__func__, __LINE__, ERROR_MSG,
+						FILE_FORMAT_ERROR, "failed to "
+						"read locus %d of haplotype %d "
+						"in file '%s'.  Check option "
+						"-R.\n", l + 1, i + j + 1,
+								opt->filename);
 			fgetc(f1);	/* clear new line */
 		}
 	
-		if (!(i % dat->ploidy) && opt->verbosity >= VERBOSE)
+		if ((opt->interleaved || !(i % dat->ploidy))
+						&& opt->verbosity >= VERBOSE)
 			mmessage(INFO_MSG, NO_ERROR, "Read individual %u.\n",
-							i / dat->ploidy + 1);
+				i / (opt->interleaved ? 1 : dat->ploidy) + 1);
 
 		if (feof(f1))
 			break;
+
 	}
 
 	fclose(f1);
@@ -513,10 +553,9 @@ void skip_line(FILE *fp)
  * pointing at the character immediately after the word.
  *
  * @param fp file handle
- * @param filename name of file opened with file handle fp
  * @param word unallocated pointer to char to store word
  */
-int read_next_word(FILE *fp, const char *filename, char **word)
+int read_next_word(FILE *fp, char **word)
 {
 	char a;
 	int len = 0;
@@ -547,9 +586,7 @@ int read_next_word(FILE *fp, const char *filename, char **word)
 	/* read word */
 	if (fgets(*word, len+1, fp) == NULL) {
 		free(*word);
-		return message(stderr, __FILE__, __func__, __LINE__,
-			ERROR_MSG, FILE_FORMAT_ERROR, "could not read next "
-			"word in file '%s'\n", filename);
+		return FILE_FORMAT_ERROR;
 	}
 
 	return NO_ERROR;

@@ -841,6 +841,7 @@ int make_options(options** opt)
 			MEMORY_ALLOCATION, "options object");
 
 	(*opt)->filename = NULL;
+	(*opt)->interleaved = 0;
 	(*opt)->R_format = 0;
 	(*opt)->alleles_are_indices = 0;
 	(*opt)->seed = 1234567;
@@ -1681,7 +1682,7 @@ void fprint_usage(FILE* fp, const char* invocation_name, void* obj)
 		"\t\t-w n <n>: repeat at least <n> times (default: %d)\n"
 		"\t\t-w t <n>: repeat at least <n> minutes (default: %d)\n"
 		"\t\t-w m <n>: repeat at most <n> minutes (default: %d)\n"
-		"\t-z\t"
+		"\t-x\t"
 		"Use block relaxation algorithm (default: %s).\n",
 		opt->target_revisit, opt->target_ll ? opt->desired_ll : 0,
 		opt->n_seconds, opt->verbosity,
