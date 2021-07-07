@@ -97,7 +97,7 @@ double logL_admixture(options *opt, data *dat, model *mod, int which)
 {
 	int i, k, l, m, m_start;
 	double temp = 0.0, loglt1 = 0.0;
-	double ***pKLM, **etaik, *etak;
+	double ***pKLM = NULL, **etaik = NULL, *etak = NULL;
 
 #ifndef OLDWAY
 	pKLM = mod->vpklm[which];

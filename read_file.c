@@ -130,8 +130,7 @@ int read_file(options *opt, data *dat)
 	/* read alleles */
 	fseek(f1, 0, SEEK_SET);
 	skip_line(f1);
-
-	for (i=0; i<n_haplotypes; i += opt->interleaved ? 1 : dat->ploidy) {
+	for (i=0; i<n_haplotypes; i += !opt->interleaved ? 1 : dat->ploidy) {
 
 		/* first haplotype of individual idv */
 		if (opt->interleaved || !(i % dat->ploidy)) {
@@ -153,7 +152,6 @@ int read_file(options *opt, data *dat)
 			free(locale);
 			if (err)
 				return err;
-
 			idv++;
 
 		/* other haplotypes of idv: first cols. are duplicate */
