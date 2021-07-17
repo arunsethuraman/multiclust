@@ -549,14 +549,14 @@ int maximize_likelihood(options* opt, data* dat, model* mod, int bootstrap)
 				/* output information if sufficiently verbose and not -w */
 		if (!bootstrap && opt->verbosity > QUIET && opt->write_files)
 			fprintf(stdout, "K = %d, initialization = %d: %f "
-				"(%s) in %3d iterations, %02d:%02d:%02d (%f; %d)\n",
+				"(%s) in %3d iterations, %02d:%02d:%02d (%f; %d), seed: %f\n",
 				mod->K, i, mod->logL,
 				mod->converged ? "converged" : "not converged",
 				mod->n_iter,
 				(int)(mod->seconds_run / 3600),
 				(int)((((int)mod->seconds_run) % 3600) / 60),
 				(((int)mod->seconds_run) % 60), mod->max_logL,
-				mod->n_maxll_times);
+				mod->n_maxll_times, opt->seed);
 
 		/* global mle if K=1; no need for multiple initializations */
 		if (mod->K == 1)
