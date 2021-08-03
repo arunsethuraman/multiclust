@@ -4,9 +4,12 @@
 
 CC=gcc
 CFLAGS=-std=c17 -Wall -Wextra -pedantic -O3 #-ffast-math (does not respect IEEE) -funroll-all-loops (usually makes programs run slower)
-#CFLAGS=-std=c99 -Wall -W -pedantic -pg -O3
-#CFLAGS=-std=c99 -Wall -W -pedantic -g
+#CFLAGS=-std=c99 -Wall -W -pedantic -pg -O1
 LDFLAGS=-lm #-fleading-underscore -I/home/tuf29140/lapack/lapack-3.4.2/lapacke/include/ -L/home/tuf29140/lapack/lapack-3.4.2 #-L/usr/lib64/atlas/ -I/usr/include -llapack -L/home/tuf29140/lapack/CBLAS/lib/#-I/usr/local/include -L/usr/local/lib -lgsl -l gslcblas
+
+ifdef DBG
+	CFLAGS=-std=c17 -Wall -Wextra -pedantic -g
+endif
 
 ifdef OLDWAY
 	CFLAGS := $(CFLAGS) -DOLDWAY

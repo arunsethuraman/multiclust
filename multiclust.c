@@ -29,6 +29,7 @@ int make_model(model**);
 int parse_options(options* opt, data* dat, int argc, const char** argv);
 int allocate_model_for_k(options* opt, model* mod, data* dat);
 int synchronize(options* opt, data* dat, model* mod);
+int simulate_data(data *dat, options *opt, model *mod);
 
 /* do the data fitting or bootstrap */
 int timed_model_estimation(options*, data*, model*);
@@ -97,14 +98,33 @@ int main(int argc, const char** argv)
 	if ((err = parse_options(opt, dat, argc, argv)))
 		goto FREE_AND_EXIT;
 
-	/* read data */
-	if ((err = read_file(opt, dat)))
+	if (opt->simulate) {
+
+		if ((err = read_admixture_qfile(dat, mod, opt->admix_qfile)))
+			goto FREE_AND_EXIT;
+		
+		if ((err = read_admixture_pfile(dat, mod, opt->admix_pfile)))
+			goto FREE_AND_EXIT;
+
+		if ((err = simulate_data(dat, opt, mod)))
+			goto FREE_AND_EXIT;
+
+		if ((err = write_data(opt, dat, opt->simulate_outfile, 0)))
+			goto FREE_AND_EXIT;
+		
+		// force exit, as we are not set up to run yet if (!opt->n_init)
 		goto FREE_AND_EXIT;
+	} else {
+
+		/* read data */
+		if ((err = read_file(opt, dat)))
+			goto FREE_AND_EXIT;
 	
-	if (opt->verbosity >= TALKATIVE)
-		mmessage(INFO_MSG, NO_ERROR, "Finished reading data: %u "
-			"%u-ploid individuals at %u loci.\n", dat->I,
+		if (opt->verbosity >= TALKATIVE)
+			mmessage(INFO_MSG, NO_ERROR, "Finished reading data: %u "
+				"%u-ploid individuals at %u loci.\n", dat->I,
 							dat->ploidy, dat->L);
+	}
 
 	/* finalize settings that refer to data; check settings */
 	if ((err = synchronize(opt, dat, mod)))
@@ -143,6 +163,27 @@ FREE_AND_EXIT:
 	return err;
 
 } /* main */
+
+int simulate_data(data *dat, options *opt, model *mod)
+{
+	MAKE_2ARRAY(dat->IL, dat->I * dat->ploidy, dat->L);
+	MAKE_1ARRAY(dat->I_K, dat->I);
+
+	if (opt->admixture)
+		MAKE_2ARRAY(dat->IL_K, dat->I * dat->ploidy, dat->L);
+
+	for (int i = 0; i < dat->I; i += dat->ploidy)
+		for (int j = 0; j < dat->ploidy; ++j)
+			for (int l = 0; l < dat->L; ++l) {
+				dat->IL_K[i + j][l] = (int) (rand() % mod->K);	/* [KSD,TODO] This is not uniform unless RAND_MAX % mod->K == 0. */
+				if (rand() / (RAND_MAX + 1.) < mod->vpklm[0][dat->IL_K[i + j][l]][l][0])
+					dat->IL[i + j][l] = 0;
+				else
+					dat->IL[i + j][l] = 1;
+			}
+
+	return NO_ERROR;
+} /* simulate_data */
 
 /**
  * Time model estimation by repeating multiple times.  Repeat model-fitting
@@ -549,7 +590,7 @@ int maximize_likelihood(options* opt, data* dat, model* mod, int bootstrap)
 				/* output information if sufficiently verbose and not -w */
 		if (!bootstrap && opt->verbosity > QUIET && opt->write_files)
 			fprintf(stdout, "K = %d, initialization = %d: %f "
-				"(%s) in %3d iterations, %02d:%02d:%02d (%f; %d), seed: %f\n",
+				"(%s) in %3d iterations, %02d:%02d:%02d (%f; %d), seed: %u\n",
 				mod->K, i, mod->logL,
 				mod->converged ? "converged" : "not converged",
 				mod->n_iter,
@@ -619,7 +660,7 @@ int run_bootstrap(options* opt, data* dat, model* mod)
 		if ((err = parametric_bootstrap(opt, dat, mod)))
 			return err;
 		/* temporary : if you want to generate some simulation data to play with
-		write_data(opt, dat, 1);
+		write_data(opt, dat, NULL, 1);
 		*/
 
 		/* fit models H0 and HA */
@@ -842,8 +883,13 @@ int make_options(options** opt)
 
 	(*opt)->filename = NULL;
 	(*opt)->interleaved = 0;
+	(*opt)->missing_value = MISSING;
+	(*opt)->imputation_method = 0;
+	(*opt)->imputed_outfile = NULL;
 	(*opt)->R_format = 0;
 	(*opt)->alleles_are_indices = 0;
+	(*opt)->one_plus = 0;
+	(*opt)->write_plus_one = 0;
 	(*opt)->seed = 1234567;
 	(*opt)->n_init = 50;
 
@@ -864,6 +910,9 @@ int make_options(options** opt)
 	(*opt)->eta_lower_bound = 1e-8;
 	(*opt)->p_lower_bound = 1e-8;
 	(*opt)->path = "./";
+
+	/* run settings */
+	(*opt)->do_projection = 1;
 	(*opt)->admixture = 0;
 	(*opt)->eta_constrained = 0;
 	(*opt)->n_bootstrap = 0;
@@ -890,6 +939,11 @@ int make_options(options** opt)
 	(*opt)->partition_from_file = NULL;
 	(*opt)->parallel = 0;
 	(*opt)->outfile_name = NULL;
+
+	(*opt)->simulate = 0;
+	(*opt)->admix_qfile = NULL;
+	(*opt)->admix_pfile = NULL;
+	(*opt)->simulate_outfile = "sim.stru";
 
 	return NO_ERROR;
 } /* make_options */
@@ -945,6 +999,7 @@ int make_data(data** dat)
 	(*dat)->missing_data = 0;
 	(*dat)->I_K = NULL;
 	(*dat)->IL_K = NULL;
+	(*dat)->idv = NULL;
 
 	return NO_ERROR;
 } /* make_data */
@@ -1058,6 +1113,7 @@ int make_model(model** mod)
 	(*mod)->work = NULL;
 #endif
 
+	(*mod)->count_K = NULL;
 	(*mod)->current_i = 0;
 	(*mod)->current_l = 0;
 	(*mod)->current_k = 0;
@@ -1332,11 +1388,20 @@ int parse_options(options* opt, data* dat, int argc, const char** argv)
 			opt->afile = argv[++i];
 			break;
 		case 'b':
-			opt->n_bootstrap = read_int(argc, argv, ++i,
-				(void*)opt);
-			if (opt->n_bootstrap < 0 || errno
-				|| opt->block_relax)
+			if (i + 1 == argc)
 				goto CMDLINE_ERROR;
+			if (!strncmp(&argv[i][j], "bou", 3)) {
+				opt->lower_bound = read_double(argc, argv, ++i,
+								(void *)opt);
+				if (opt->lower_bound < 0 || errno)
+					goto CMDLINE_ERROR;
+			} else {
+				opt->n_bootstrap = read_int(argc, argv, ++i,
+								(void*)opt);
+				if (opt->n_bootstrap < 0 || errno
+							|| opt->block_relax)
+					goto CMDLINE_ERROR;
+			}
 			break;
 		case 'c':
 			opt->eta_constrained = 1;
@@ -1357,7 +1422,19 @@ int parse_options(options* opt, data* dat, int argc, const char** argv)
 				goto CMDLINE_ERROR;
 			break;
 		case 'f':
-			opt->filename = argv[++i];
+			if (!strncmp(&argv[i][j], "fo", 2)) {
+				if (i + 1 >= argc)
+					goto CMDLINE_ERROR;
+				++i;
+				if (!strcmp(argv[i], "ped"))
+					opt->output_format = PED;
+				else if (!strcmp(argv[i], "stru"))
+					opt->output_format = STRUCTURE;
+				else
+					goto CMDLINE_ERROR;
+			} else {
+				opt->filename = argv[++i];
+			}
 			break;
 		case 'g':
 			opt->adjust_step = read_int(argc, argv, ++i,
@@ -1369,12 +1446,25 @@ int parse_options(options* opt, data* dat, int argc, const char** argv)
 			fprint_usage(stdout, argv[0], (void*)opt);
 			return CUSTOM_ERROR;
 		case 'i':
-			opt->n_init_iter = read_int(argc, argv, ++i,
-				(void*)opt);
-			if (opt->n_init_iter < 0 || errno)
-				goto CMDLINE_ERROR;
+			if (!strncmp(&argv[i][j], "im", 2)) {
+				opt->imputation_method = 1;
+				if (i + 1 < argc && argv[i + 1][0] != '-')
+					opt->imputed_outfile = argv[++i];
+				if (opt->verbosity >= TALKATIVE)
+					mmessage(INFO_MSG, DEBUG_MSG, "Will "
+						"impute missing data and output"
+								" to '%s'.\n",
+							opt->imputed_outfile);
+			} else {
+				opt->n_init_iter = read_int(argc, argv, ++i,
+					(void*)opt);
+				if (opt->n_init_iter < 0 || errno)
+					goto CMDLINE_ERROR;
+			}
 			break;
 		case 'I':
+			if (!strcmp(&argv[i][j], "I1"))
+				opt->one_plus = 1;
 			opt->alleles_are_indices = 1;
 			break;
 		case '1':
@@ -1397,12 +1487,17 @@ int parse_options(options* opt, data* dat, int argc, const char** argv)
 			opt->min_K = opt->max_K;
 			break;
 		case 'm':
-			opt->n_rand_em_init = read_int(argc, argv, ++i,
-				(void*)opt);
-			if (opt->n_rand_em_init == 0)
-				opt->initialization_procedure = NOTHING;
-			if (opt->n_rand_em_init < 0 || errno)
-				goto CMDLINE_ERROR;
+			if (!strncmp(&argv[i][j], "mi", 2)) {
+				opt->missing_value = read_int(argc, argv, ++i,
+					(void *) opt);
+			} else {
+				opt->n_rand_em_init = read_int(argc, argv, ++i,
+					(void*)opt);
+				if (opt->n_rand_em_init == 0)
+					opt->initialization_procedure = NOTHING;
+				if (opt->n_rand_em_init < 0 || errno)
+					goto CMDLINE_ERROR;
+			}
 			break;
 		case 'M':
 			opt->parallel = 1;
@@ -1412,6 +1507,8 @@ int parse_options(options* opt, data* dat, int argc, const char** argv)
 		case 'n':
 			opt->n_init = read_int(argc, argv, ++i,
 				(void*)opt);
+			if (opt->n_init == 0)
+				opt->n_repeat = 0;
 			if (errno)
 				goto CMDLINE_ERROR;
 			break;
@@ -1419,10 +1516,16 @@ int parse_options(options* opt, data* dat, int argc, const char** argv)
 			opt->outfile_name = argv[++i];
 			break;
 		case 'p':
-			dat->ploidy = read_int(argc, argv, ++i,
-				(void*)opt);
-			if (dat->ploidy < 1 || errno)
-				goto CMDLINE_ERROR;
+			if (!strncmp(&argv[i][j], "pr", 2)) {
+				opt->do_projection = 0;
+			} else if (!strncmp(&argv[i][j], "pl", 2)) {
+				opt->write_plus_one = 1;
+			} else {
+				dat->ploidy = read_int(argc, argv, ++i,
+					(void*)opt);
+				if (dat->ploidy < 1 || errno)
+					goto CMDLINE_ERROR;
+			}
 			break;
 		case 'P':
 			opt->pfile = argv[++i];
@@ -1446,10 +1549,30 @@ int parse_options(options* opt, data* dat, int argc, const char** argv)
 			//	goto CMDLINE_ERROR;
 			break;
 		case 's':
-			opt->accel_scheme = read_int(argc, argv, ++i,
-				(void*)opt);
-			if (opt->accel_scheme < 0 || errno)
-				goto CMDLINE_ERROR;
+			if (!strncmp(&argv[i][j], "si", 2)) {
+				if (i + 2 == argc)
+					goto CMDLINE_ERROR;
+				opt->simulate = 1;
+				opt->admix_qfile = argv[++i];
+				opt->admix_pfile = argv[++i];
+				if (i + 1 < argc && argv[i + 1][0] != '-') {
+					opt->simulate_outfile = argv[++i];
+					opt->output_format = STRUCTURE;
+				}
+				if (opt->verbosity >= TALKATIVE)
+					mmessage(INFO_MSG, DEBUG_MSG,
+					"Simulating from admixture output "
+					"'%s, %s', writing to '%s'.\n",
+					opt->admix_qfile, opt->admix_pfile,
+					opt->simulate_outfile);
+			} else {
+				if (i + 1 == argc)
+					goto CMDLINE_ERROR;
+				opt->accel_scheme = read_int(argc, argv, ++i,
+					(void*)opt);
+				if (opt->accel_scheme < 0 || errno)
+					goto CMDLINE_ERROR;
+			}
 			break;
 		case 't':
 			opt->n_seconds = 60 * read_uint(argc, argv, ++i,
@@ -1542,7 +1665,7 @@ int parse_options(options* opt, data* dat, int argc, const char** argv)
 		}
 	}
 
-	if (opt->filename == NULL)
+	if (opt->filename == NULL && !opt->simulate)
 		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
 			INVALID_CMDLINE, "You must specify the data file "
 			"with command line option '-f'.  Try '-h' for help.\n");
@@ -1577,9 +1700,10 @@ void fprint_usage(FILE* fp, const char* invocation_name, void* obj)
 		prog_name);
 	fprintf(fp, "\nSYNOPSIS\n");
 	fprintf(fp,
-		"\t%s [-k <n> | -1 <n> -2 <n>] [-a -b <n> -c -C <n> -d <s> -e <d> -E <d> -f <d> -g <d> -h"
-		"\n\t\t-i <n> -I -m <n> -M <n> -n <n> -o <s> -p <n> -R -s <n> -t <n> -T <d> -u <s> -v -w <s> -x] -f <s>\n"
-		"\n\t\twhere <n> stands for integer, <s> for string, <d> for double",
+		"\t%s [-k <n> | -1 <n> -2 <n>] [-a -b <n> -bou <d> -c -C <n> -d <s> -e <d> -E <d> -f <d> -g <d> -h"
+		"\n\t\t-i <n> -I -m <n> --missing <n> -M <n> -n <n> -o <s> -p <n> --projection --plus -R -s <n> -t <n> -T <d> -u <s> -v -w <s> -x] -f <s> --format <s>"
+		"\n\t\t--simulate <qfile> <pfile> <ofile>"
+		"\n\n\t\twhere <n> stands for integer, <s> for string, <d> for double",
 		prog_name);
 	fprintf(fp, "\nDESCRIPTION\n");
 	fprintf(fp,
@@ -1593,10 +1717,13 @@ void fprint_usage(FILE* fp, const char* invocation_name, void* obj)
 		/* ---------------------------------------------------------- */
 		"\t-a\t"
 		"Choose admixture model (default: %s).\n"
-		"\t-b\t"
+		"\t-b, --bootstrap\t"
 		"Bootstrap test of H0: K=<k>-1 vs. Ha: K=<k>, where <k> is\n"
 		"\t\tgiven by -k option.  Specify number of bootstraps as\n"
 		"\t\targument (default: %d).\n"
+		"\t--bound\t"
+		"Lower bound for allele and mixing/admixing proportions\n"
+		"\t\t(default: %e).\n"
 		"\t-c\t"
 		"Constrain mixing proportions identical across individuals\n"
 		"\t\t(only enforced with -a; default: %s).\n"
@@ -1612,6 +1739,10 @@ void fprint_usage(FILE* fp, const char* invocation_name, void* obj)
 		"\t\t(default: %.1e).\n"
 		"\t-f\t"
 		"Name of data file (STRUCTURE format).\n"
+		"\t--format\n"
+		"\t\tFormat of data output file (default: stru).\n"
+		"\t\t\tstru\tSTRUCTURE format, the default.\n"
+		"\t\t\tped\tPlink's ped format.\n"
 		"\t-g\t"
 		"Adjust step size at most this many times (default: %d)\n"
 		"\t-h\t"
@@ -1620,6 +1751,8 @@ void fprint_usage(FILE* fp, const char* invocation_name, void* obj)
 		"Initial iterations prior to acceleration (default: %d)\n"
 		"\t-I\t"
 		"Alleles are indices (no sorting, etc.) (default: %s)\n"
+		"\t-I1\t"
+		"Alleles are indices plus 1 (no sorting, etc.) (default: %s)\n"
 		"\t-k\t"
 		"The number of clusters to fit (default: %d).\n"
 		"\t-1\t"
@@ -1627,16 +1760,20 @@ void fprint_usage(FILE* fp, const char* invocation_name, void* obj)
 		"\t-2\t"
 		"The maximum number of clusters to fit (default: %d).\n",
 		opt->admixture ? "yes" : "no", opt->n_bootstrap,
+		opt->lower_bound,
 		opt->eta_constrained ? "yes" : "no", opt->max_iter,
 		opt->path, opt->rel_error, opt->abs_error,
 		opt->adjust_step,
 		opt->n_init_iter, opt->alleles_are_indices ? "yes" : "no",
+		opt->one_plus ? "yes" : "no",
 		opt->max_K, opt->min_K, opt->max_K
 	);
 	fprintf(fp,
 		"\t-m\t"
 		"The number of Rand EM initializations, 0 to avoid Rand EM\n"
 		"\t\t(default: %d).\n"
+		"\t--missing\n"
+		"\t\tInteger value that indicates missing (default: -9).\n"
 		"\t-M\t"
 		"Parallelization option\n"
 		"\t\t(default: no parallelization). \n"
@@ -1647,6 +1784,10 @@ void fprint_usage(FILE* fp, const char* invocation_name, void* obj)
 		"Option to create unique output file name\n"
 		"\t-p\t"
 		"The ploidy (default: 2).\n"
+		"\t--projection\n"
+		"\t\tTurn off simplex projection (default: on).\n"
+		"\t--plus\n"
+		"\t\tPlus one to alleles when writing data (default: on).\n"
 		"\t-r\t"
 		"Random number (default: %u).\n"
 		"\t-R\t"
@@ -1660,7 +1801,9 @@ void fprint_usage(FILE* fp, const char* invocation_name, void* obj)
 		"\t\t\t3 - SQUAREM version 3\n"
 		"\t\t\t4 - Quasi Newton version 1 (1 secant condition)\n"
 		"\t\t\t5 - Quasi Newton version 2 (2 secant conditions)\n"
-		"\t\t\t6 - Quasi Newton version 3 (3 secant conditions)\n",
+		"\t\t\t6 - Quasi Newton version 3 (3 secant conditions)\n"
+		"\t--simulate <qfile> <pfile> [<ofile>]\t"
+		"Simulate data from admixture <qfile>, <pfile>, and write data to <ofile>.\n",
 		opt->n_rand_em_init, opt->n_init, opt->seed,
 		opt->R_format ? "yes" : "no", accel_method_names[MIN(opt->accel_scheme, QN)]
 	);

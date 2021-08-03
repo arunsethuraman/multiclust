@@ -399,16 +399,19 @@ double qn_accelerated_update(options *opt, data *dat, model *mod)
 		q1 = (q1 + 1) % opt->q;
 		j++;
 	} while (q1 != mod->delta_index);
-	if (opt->admixture && !opt->eta_constrained)
-		for (i = 0; i < dat->I; i++) {
-			simplex_project_eta(mod, opt, i);
-			if (debug>1) fprintf(stderr, "etaik[%d][0]: %f -> %f\n", i, mod->vetaik[mod->tindex][i][0], mod->vetaik[mod->pindex][i][0]);
-		}
-	else
-		simplex_project_eta(mod, opt, 0);
-	for (k = 0; k < mod->K; k++)
-		for (l = 0; l < dat->L; l++)
-			simplex_project_pklm(mod, dat, opt, k, l);
+
+	if (opt->do_projection) {
+		if (opt->admixture && !opt->eta_constrained)
+			for (i = 0; i < dat->I; i++) {
+				simplex_project_eta(mod, opt, i);
+				if (debug>1) fprintf(stderr, "etaik[%d][0]: %f -> %f\n", i, mod->vetaik[mod->tindex][i][0], mod->vetaik[mod->pindex][i][0]);
+			}
+		else
+			simplex_project_eta(mod, opt, 0);
+		for (k = 0; k < mod->K; k++)
+			for (l = 0; l < dat->L; l++)
+				simplex_project_pklm(mod, dat, opt, k, l);
+	}
 
 	ll = log_likelihood(opt, dat, mod, mod->tindex);
 	return ll;
@@ -467,7 +470,8 @@ double accelerated_update(options *opt, data *dat, model *mod, double s)
 						+ s*s*(mod->iter2_pKLM[k][l][m] - 2*mod->iter1_pKLM[k][l][m] + mod->init_pKLM[k][l][m]);
 #endif
 			}
-			simplex_project_pklm(mod, dat, opt, k, l);
+			if (opt->do_projection)
+				simplex_project_pklm(mod, dat, opt, k, l);
 #ifndef OLDWAY
 			if (debug)
 				fprintf(stderr, "pklm[%d][%d][0]: %f -> %f\n", k, l, mod->vpklm[mod->tindex][k][l][0], mod->vpklm[mod->pindex][k][l][0]);
@@ -502,7 +506,8 @@ double accelerated_update(options *opt, data *dat, model *mod, double s)
 						- 2 * s * (mod->iter1_etaik[i][k] - mod->init_etaik[i][k])
 						+ s * s * (mod->iter2_etaik[i][k] - 2*mod->iter1_etaik[i][k] + mod->init_etaik[i][k]);
 #endif
-			simplex_project_eta(mod, opt, i);
+			if (opt->do_projection)
+				simplex_project_eta(mod, opt, i);
 		}
 	} else {
 		for (k = 0; k < mod->K; k++)
@@ -530,7 +535,8 @@ double accelerated_update(options *opt, data *dat, model *mod, double s)
 					- 2 * s * (mod->iter1_etak[k] - mod->init_etak[k])
 					+ s * s * (mod->iter2_etak[k] - 2*mod->iter1_etak[k] + mod->init_etak[k]);
 #endif
-		simplex_project_eta(mod, opt, -1);
+		if (opt->do_projection)
+			simplex_project_eta(mod, opt, -1);
 	}
 #ifndef OLDWAY
 	//print_param(opt, dat, mod, mod->tindex);

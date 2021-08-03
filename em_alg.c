@@ -633,7 +633,8 @@ void m_step_admixture_orig(options *opt, data *dat, model *mod)
 		}
 		if (debug)
 			fprintf(stderr, "\n");
-		simplex_project_eta(mod, opt, 0);
+		if (opt->do_projection)
+			simplex_project_eta(mod, opt, 0);
 	} else {
 		for (i = 0; i < dat->I; i++) {
 			temp = 0.0;
@@ -685,7 +686,8 @@ void m_step_admixture_orig(options *opt, data *dat, model *mod)
 			}
 			if (debug & 1)
 				fprintf(stderr, "\n");
-			simplex_project_eta(mod, opt, i);
+			if (opt->do_projection)
+				simplex_project_eta(mod, opt, i);
 		}
 	}
 
@@ -733,7 +735,8 @@ void m_step_admixture_orig(options *opt, data *dat, model *mod)
 			}
 			if (debug & 2)
 				fprintf(stderr, "\n");
-			simplex_project_pklm(mod, dat, opt, k, l);
+			if (opt->do_projection)
+				simplex_project_pklm(mod, dat, opt, k, l);
 		}
 	}
 	//print_param(opt, dat, mod, mod->tindex);
@@ -904,7 +907,8 @@ void m_step_mixture(options *opt, data *dat, model *mod)
 		mod->etak[k] /= temp;
 #endif
 	}
-	simplex_project_eta(mod, opt, 0);
+	if (opt->do_projection)
+		simplex_project_eta(mod, opt, 0);
 
 	/* estimate p_{klm} */
 	for (k = 0; k < mod->K; k++)
@@ -946,7 +950,8 @@ void m_step_mixture(options *opt, data *dat, model *mod)
 #else
 				mod->pKLM[k][l][m] /= temp;
 #endif
-			simplex_project_pklm(mod, dat, opt, k, l);
+			if (opt->do_projection)
+				simplex_project_pklm(mod, dat, opt, k, l);
 		}
 } /* End of m_step_mixture(). */
 

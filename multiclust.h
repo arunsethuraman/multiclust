@@ -130,6 +130,13 @@ enum {	NONE,		/*!< no acceleration */
 	NUM_ACCELERATION_METHODS
 };
 
+/**
+ * Output formats.
+ */
+enum {	STRUCTURE,	/*!< our structure-type format */
+	PED,		/*!< Plink's *.ped format */
+};
+
 #define MISSING         -9
 
 extern const char *accel_method_abbreviations[NUM_ACCELERATION_METHODS];
@@ -155,18 +162,27 @@ struct _options {
 	int max_iter;			/*!< max. number of iterations */
 	int min_K;			/*!< min. K to try */
 	int max_K;			/*!< max. K to try */
+	int missing_value;		/*!< missing data value in input file */
+	int imputation_method;		/*!< set optional imputation method for missing data */
+	char const *imputed_outfile;	/*!< data file to write with results after imputation */
+	int output_format;		/*!< data file output format */
 	double lower_bound;		/*!< minimum probability */
 	double rel_error;		/*!< relative log like. error for convergence */
 	double abs_error;		/*!< absolute log like. error for convergence */
 	const char *filename;		/*!< data file name */
 	const char *path;		/*!< location of data files */
+	const char *admix_pfile;	/*!< name of admixture P file */
+	const char *admix_qfile;	/*!< name of admixture Q file */
 	int R_format;			/*!< data file in R format */
 	int interleaved;		/*!< chromosomes interleaved */
 	int alleles_are_indices;	/*!< allele names are indices */
+	int one_plus;			/*!< alleles are indices + 1 */
+	int write_plus_one;		/*!< when write data, +1 to alleles */
 	unsigned int seed;		/*!< random number seed */
 	int n_bootstrap;		/*!< no. of bootstrap trials */
 	int block_relax;		/*!< block relaxation algorithm */
 	int accel_scheme;		/*!< acceleration scheme */
+	int do_projection;		/*!< do simplex projection */
 	char *accel_name;		/*!< name of chosen acceleration scheme */
 	char *accel_abbreviation;	/*!< abbreviation of chosen acceleration scheme */
 	int q;				/*!< number of secant approximations (QN) */
@@ -191,6 +207,8 @@ struct _options {
 	int pK;				/*!< K in afile */
 	int parallel;			/*!< determines parallelization of code */
 	const char *outfile_name; 	/*!< allows user to create unique outfile name */
+	int simulate;			/*!< simulate data */
+	const char *simulate_outfile;	/*!< simulation data outfile */
 }; /* options */
 
 /**
@@ -379,6 +397,8 @@ void cleanup_parametric_bootstrap(data *dat);
 
 /* input */
 int read_file(options *opt, data *dat);
+int read_admixture_qfile(data *dat, model *smod, char const *pfile);
+int read_admixture_pfile(data *dat, model *smod, char const *qfile);
 int make_ila(data *dat);
 int read_pfile(options *opt, data *dat, model *mod);
 int read_qfile(options *opt, data *dat, model *mod);
@@ -387,7 +407,7 @@ int read_afile(options *opt, data *dat);
 /* output */
 int write_file(char *outfile, options *opt, data *dat, model *mod);
 int write_file_detail(options *opt, data *dat, model *mod);
-int write_data(options *opt, data *dat, int useILM);
+int write_data(options *opt, data *dat, char const *outfile, int useILM);
 void partition_admixture(data *dat, model *mod);
 void partition_mixture(data *dat, model *mod);
 int popq_admix(options *opt, data *dat, model *mod);

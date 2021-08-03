@@ -19,43 +19,83 @@
   * @param use_ILM write from dat->ILM (not dat->IL)
   * @return error status
   */
-int write_data(options* opt, data* dat, int use_ILM)
+int write_data(options *opt, data *dat, char const *outfile, int use_ILM)
 {
 	int i, j, l, m, msum, r, r2;
-	char* outfile = NULL;
-	int len = strlen(opt->path) + 7;
-	FILE* fp;
+	char *filename = NULL;
+	FILE *fp;
 
-	r2 = r = rand();
-	while (r2) {
-		len++;
-		r2 /= 10;
+	if (!outfile) {
+		int len = strlen(opt->path) + 7;
+		r2 = r = rand();
+		while (r2) {
+			len++;
+			r2 /= 10;
+		}
+
+		MAKE_1ARRAY(filename, len);
+
+		sprintf(filename, "%sbs%d.str", opt->path, r);
+
+		if ((fp = fopen(filename, "w")) == NULL) {
+			FREE_1ARRAY(filename);
+			return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
+				FILE_OPEN_ERROR, filename);
+		}
+		FREE_1ARRAY(filename);
+	} else if ((fp = fopen(outfile, "w")) == NULL) {
+		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
+				FILE_OPEN_ERROR, outfile);
 	}
 
-	MAKE_1ARRAY(outfile, len);
-
-	sprintf(outfile, "%sbs%d.str", opt->path, r);
-
-	if ((fp = fopen(outfile, "w")) == NULL) {
-		FREE_1ARRAY(outfile);
-		message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
-			FILE_OPEN_ERROR, outfile);
-	}
 
 	/* header line */
-	for (l = 0; l < dat->L; l++)
-		fprintf(fp, "%sloc%d", l ? " " : "", l + 1);
-	fprintf(fp, "\n");
+	if (opt->output_format == STRUCTURE) {
+		for (l = 0; l < dat->L; l++)
+			fprintf(fp, "%sloc%d", l ? " " : "", l + 1);
+		fprintf(fp, "\n");
+	}
+
+	if (opt->output_format == PED)
+		opt->write_plus_one = 1;
 
 	if (!use_ILM) {
-		for (i = 0; i < dat->I; i++)
-			for (j = 1; j <= dat->ploidy; j++) {
-				for (l = 0; l < dat->L; l++)
-					fprintf(fp, " %d", dat->IL[i][l]);
+		if (opt->output_format == STRUCTURE) {
+			for (i = 0; i < dat->I; i += dat->ploidy)
+				for (j = 0; j < dat->ploidy; j++) {
+					if (dat->idv)
+						fprintf(fp, "%s %s",
+							dat->idv[i].name,
+							dat->pops[dat->idv[i].locale]);
+					else
+						fprintf(fp, "%d %d", i, i);
+					for (l = 0; l < dat->L; l++)
+						fprintf(fp, " %d",
+							opt->write_plus_one 
+							? dat->IL[i + j][l] + 1 
+							: dat->IL[i + j][l]);
+					fprintf(fp, "\n");
+				}
+		} else {
+			for (i = 0; i < dat->I; i += dat->ploidy) {
+				if (dat->idv)
+					fprintf(fp, "%s %s 0 0 0 -9",
+						dat->idv[i].name,
+						dat->idv[i].name);
+				else
+					fprintf(fp, "%d %d 0 0 0 -9", i, i);
+				for (l = 0; l < dat->L; ++l) {
+					for (j = 0; j < dat->ploidy; ++j) {
+						fprintf(fp, " %d",
+							opt->write_plus_one
+							? dat->IL[i + j][l] + 1
+							: dat->IL[i + j][l]);
+					}
+				}
 				fprintf(fp, "\n");
 			}
-	}
-	else {
+		}
+	} else {
 
 		for (i = 0; i < dat->I; i++) {			/* individual */
 			for (j = 1; j <= dat->ploidy; j++) {	/* haplotype */
@@ -68,7 +108,8 @@ int write_data(options* opt, data* dat, int use_ILM)
 					while (msum < j)
 						msum += dat->ILM[i][l][++m];
 					if (dat->L_alleles)
-						fprintf(fp, " %d", dat->L_alleles[l][m]);
+						fprintf(fp, " %d", opt->write_plus_one ?
+							dat->L_alleles[l][m] + 1 : dat->L_alleles[l][m]);
 					else
 						fprintf(fp, " %d", m);
 				}
@@ -78,8 +119,8 @@ int write_data(options* opt, data* dat, int use_ILM)
 	}
 
 	fclose(fp);
-
-	FREE_1ARRAY(outfile);
+	if (filename)
+		free(filename);
 
 	return NO_ERROR;
 } /* End of write_data(). */
@@ -351,7 +392,7 @@ int popq_admix(options* opt, data* dat, model* mod)
 
 	/* open file to write */
 	if (opt->outfile_name != NULL) {
-		len = strlen(opt->outfile_name) + 18;
+		len = strlen(opt->outfile_name) + 19 + (int) log10(mod->K);
 		MAKE_1ARRAY(outfile, len);
 		if ((err = errno))
 			goto FREE_AND_RETURN;
@@ -359,7 +400,7 @@ int popq_admix(options* opt, data* dat, model* mod)
 			mod->K);
 	}
 	else {
-		len = strlen(opt->path) + strlen(opt->filename) + 18;
+		len = strlen(opt->path) + strlen(opt->filename) + 19 + (int) log10(mod->K);
 		MAKE_1ARRAY(outfile, len);
 		if ((err = errno))
 			goto FREE_AND_RETURN;

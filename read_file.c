@@ -13,8 +13,9 @@
 #include "multiclust.h"
 #define MAKE_1ARRAY MAKE_1ARRAY_RETURN	/* return on memory allocation error */
 
+int change_missing_value(options *opt, data *dat);
 int summarize_alleles(options *opt, data *dat);
-int sufficient_statistics(data *dat);
+int sufficient_statistics(options *opt, data *dat);
 
 /* perhaps the functions below belong in a utility file */
 int count_columns(FILE *fp);
@@ -37,6 +38,7 @@ void bubbleSort(int *numbers, int array_size);
 int read_file(options *opt, data *dat)
 {
 	FILE *f1;		/* file handle */
+	int skip_line_two = 0;	/* skip line 2 of input file */
 	int n_info_col = 2;	/* no. non-loci columns */
 	int i, j, l, idv;	/* indices */
 	int n_haplotypes;	/* total number of observed haplotypes */
@@ -64,6 +66,20 @@ int read_file(options *opt, data *dat)
 		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
 			err, "Failed to read first individual's name in file "
 						"'%s'\n", opt->filename);
+
+	if (!strcmp(name1, "-1")) {
+		skip_line_two = 1;
+		if (opt->verbosity >= TALKATIVE)
+			mmessage(INFO_MSG, NO_ERROR, "Skipping inter-marker "
+				"distance information (multiclust assumes "
+				"independent loci).\n");
+		skip_line(f1);
+		free(name1);
+		if ((err = read_next_word(f1, &name1)))
+			return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
+				err, "Failed to read first individual's name in file "
+						"'%s'\n", opt->filename);
+	}
 	skip_line(f1);
 	if ((err = read_next_word(f1, &name2)))
 		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
@@ -76,8 +92,26 @@ int read_file(options *opt, data *dat)
 	free(name1);
 	free(name2);
 
+	l = count_columns(f1) - 1;	/* f1 on first char of next line */
+
+	/* check amount of data matches loci identified */
+	if (opt->interleaved && l != dat->L && l != dat->ploidy * dat->L)
+		return message(stderr, __FILE__, __func__, __LINE__,
+			ERROR_MSG, FILE_FORMAT_ERROR, "number of columns (%u) "
+			"in '%s' is not a multiple of ploidy (%d)\n", dat->L,
+						opt->filename, dat->ploidy);
+	else if (!opt->interleaved && l != dat->L)
+		return message(stderr, __FILE__, __func__, __LINE__,
+			ERROR_MSG, FILE_FORMAT_ERROR, "number of columns (%u) "
+			"in '%s' does not match number of alleles (%d) given "
+			"for first individual\n", dat->L, opt->filename, l);
+
+	/* allow for interleaved with each locus named only once */
+	if (opt->interleaved && l == dat->L)
+		dat->L /= dat->ploidy;
+
 	/* count number of individuals sampled */
-	dat->I = count_lines(f1) + 1;	/* f1 now at EOF */
+	dat->I = count_lines(f1) + 2 - skip_line_two;	/* f1 now at EOF */
 
 	if (opt->verbosity >= TALKATIVE)
 		mmessage(INFO_MSG, NO_ERROR, "Input file '%s' has %u "
@@ -89,16 +123,11 @@ int read_file(options *opt, data *dat)
 			ERROR_MSG, FILE_FORMAT_ERROR, "number of lines (%d) in "
 			"'%s' is not a multiple of ploidy (%d)\n", dat->I,
 						opt->filename, dat->ploidy);
-	else if (opt->interleaved && (dat->L % dat->ploidy))
-		return message(stderr, __FILE__, __func__, __LINE__,
-			ERROR_MSG, FILE_FORMAT_ERROR, "number of columns (%u) "
-			"in '%s' is not a multiple of ploidy (%d)\n", dat->L,
-						opt->filename, dat->ploidy);
+
 
 	/* allocate memory for raw data */
 	if (opt->interleaved) {
 		n_haplotypes = dat->I * dat->ploidy;
-		dat->L /= dat->ploidy;
 	} else {
 		n_haplotypes = dat->I;
 		dat->I /= dat->ploidy;
@@ -106,8 +135,8 @@ int read_file(options *opt, data *dat)
 
 	if (opt->verbosity >= TALKATIVE)
 		mmessage(INFO_MSG, NO_ERROR, "Input file '%s' has %u "
-				"haplotypes, %u individuals.\n", opt->filename,
-							n_haplotypes, dat->I);
+				"haplotypes, %u individuals, %u loci.\n",
+				opt->filename, n_haplotypes, dat->I, dat->L);
 
 
 	MAKE_2ARRAY(dat->IL, n_haplotypes, dat->L);
@@ -130,6 +159,8 @@ int read_file(options *opt, data *dat)
 	/* read alleles */
 	fseek(f1, 0, SEEK_SET);
 	skip_line(f1);
+	if (skip_line_two)
+		skip_line(f1);
 	for (i=0; i<n_haplotypes; i += !opt->interleaved ? 1 : dat->ploidy) {
 
 		/* first haplotype of individual idv */
@@ -176,7 +207,7 @@ int read_file(options *opt, data *dat)
 			break;
 
 		for (l=0; l<dat->L; l++) {
-			for (j = 0; j < (opt->interleaved ? dat->ploidy : 1); ++j)
+			for (j = 0; j < (opt->interleaved ? dat->ploidy : 1); ++j) {
 				if (fscanf(f1, "%d", &(dat->IL[i + j][l])) != 1)
 					return message(stderr, __FILE__,
 						__func__, __LINE__, ERROR_MSG,
@@ -185,6 +216,9 @@ int read_file(options *opt, data *dat)
 						"in file '%s'.  Check option "
 						"-R.\n", l + 1, i + j + 1,
 								opt->filename);
+				if (opt->one_plus)
+					--dat->IL[i + j][l];
+			}
 			fgetc(f1);	/* clear new line */
 		}
 	
@@ -221,6 +255,17 @@ int read_file(options *opt, data *dat)
 				"%s\n", __func__, dat->idv[i].name,
 				dat->pops[dat->idv[i].locale]);
 
+	if (opt->one_plus)
+		--opt->missing_value;
+
+	if (opt->missing_value != MISSING
+				&& (err = change_missing_value(opt, dat)))
+		return err;
+	
+	if (opt->missing_value != MISSING && opt->verbosity >= TALKATIVE)
+		mmessage(INFO_MSG, NO_ERROR, "Finished updating missing values "
+			"from %d to default %d.\n", opt->missing_value, MISSING);
+
 //At this point, I have an (I*ploidy)xL matrix which contains all the alleles
 //from all individuals.  I need to extract the number of unique alleles at each
 //locus, then build an IxLxM_l jagged 3D matrix, where m_l is the number of
@@ -235,19 +280,94 @@ int read_file(options *opt, data *dat)
 			"maximum number of alleles at a single locus is %u.\n",
 									dat->M);
 
-	if ((err = sufficient_statistics(dat)))
+	if ((err = sufficient_statistics(opt, dat)))
 		return err;
 
 	if (opt->verbosity >= TALKATIVE)
 		mmessage(INFO_MSG, NO_ERROR, "Finished computing sufficient "
 							"statistics.\n");
 
+	if (opt->imputation_method && opt->imputed_outfile)
+		write_data(opt, dat, opt->imputed_outfile, 0);
+
 	return err;
 
 } /* End of read_file(). */
 
+int read_admixture_qfile(data *dat, model *smod, char const *qfile)
+{
 
-int make_ila(data *dat) {
+#ifdef OLDWAY
+	return mmessage(ERROR_MSG, INTERNAL_ERROR, "Must compile in new way!\n");
+#else
+
+	FILE *fp = fopen(qfile, "r");
+
+	if (!fp)
+		return mmessage(ERROR_MSG, FILE_OPEN_ERROR, qfile);
+
+	smod->K = count_columns(fp);
+	dat->I = (count_lines(fp) + 1) / 2;
+
+	MAKE_3ARRAY(smod->vetaik, 1, dat->I, smod->K);
+
+	if (!smod->vetaik)
+		return mmessage(ERROR_MSG, MEMORY_ALLOCATION, "model::vetaik");
+	
+	rewind(fp);
+
+	for (int i = 0; i < dat->I; ++i) {
+		for (int k = 0; k < smod->K; ++k)
+			if (fscanf(fp, "%lf", &smod->vetaik[0][i][k]) != 1) {
+				fclose(fp);
+				return mmessage(ERROR_MSG, FILE_FORMAT_ERROR, 
+					"individual %d, population %d\n", i, k);
+			}
+		skip_line(fp);
+	}
+
+	fclose(fp);
+#endif
+
+	return NO_ERROR;
+} /* read_admixture_qfile */
+
+int read_admixture_pfile(data *dat, model *smod, char const *pfile)
+{
+#ifdef OLDWAY
+	return mmessage(ERROR_MSG, INTERNAL_ERROR, "Must compile in new way!\n");
+#else
+
+	FILE *fp = fopen(pfile, "r");
+
+	if (!fp)
+		return mmessage(ERROR_MSG, FILE_OPEN_ERROR, pfile);
+
+	dat->L = count_lines(fp);
+
+        MAKE_4ARRAY(smod->vpklm, 1, smod->K, dat->L, 2);	/* biallelic */
+
+	if (!smod->vpklm)
+		return mmessage(ERROR_MSG, MEMORY_ALLOCATION, "model::pklm");
+	
+	rewind(fp);
+
+	for (int l = 0; l < dat->L; ++l)
+		for (int k = 0; k < smod->K; ++k)
+			if (fscanf(fp, "%lf", &smod->vpklm[0][k][l][0]) != 1) {
+				fclose(fp);
+				return mmessage(ERROR_MSG, FILE_FORMAT_ERROR,
+                                        "locus %d, population %d\n", l, k);
+			}
+
+	fclose(fp);
+#endif
+
+	return NO_ERROR;
+} /* read_admixture_pfile */
+
+int make_ila(data *dat)
+{
 	int i, l, a, m, m_start;
 
 	MAKE_3ARRAY(dat->ila, dat->I, dat->L, dat->ploidy);
@@ -277,6 +397,34 @@ int make_ila(data *dat) {
 
 
 /**
+ * Convert missing values to MISSING.
+ *
+ * @param opt	options object
+ * @param dat	data object
+ * @return	error status
+ */
+int change_missing_value(options *opt, data *dat)
+{
+	int n_haplotypes = dat->I * dat->ploidy;
+
+	for (int i = 0; i < n_haplotypes; ++i)
+		for (int l = 0; l < dat->L; ++l) {
+			if (dat->IL[i][l] == MISSING)
+				return message(stderr, __FILE__, __func__,
+					__LINE__, ERROR_MSG, INVALID_USER_SETUP,
+					"The default missing value (%d) is "
+					"observed in the input file, but the "
+					"user has defined the missing value to "
+					"be %d.\n", MISSING, opt->missing_value);
+			if (dat->IL[i][l] == opt->missing_value)
+				dat->IL[i][l] = MISSING;
+		}
+	
+	return NO_ERROR;
+} /* change_missing_value */
+
+
+/**
  * Allocate and populate matrices for allele information.  Allocates and
  * populates uniquealleles, which stores number of unique alleles at each locus.
  * Allocates and populates L_alleles, a jagged array that lists number of
@@ -289,7 +437,8 @@ int make_ila(data *dat) {
  */
 int summarize_alleles(options *opt, data *dat)
 {
-	int i, k, l, m;
+	int i, k, l, m, max, j;
+	int count_mis_val= 0;
 	int n_haplotypes
 		= dat->I * dat->ploidy;	/* no. of haplotypes */
 	int *locusgeno = NULL;		/* one column of data from dat->IL */
@@ -306,13 +455,56 @@ int summarize_alleles(options *opt, data *dat)
 	dat->M = 0;
 	for (l = 0; l < dat->L; l++) {
 		if (opt->alleles_are_indices) {
-			for (i=0; i < n_haplotypes; i++)
+			count_mis_val = 0;
+			for (i=0; i < n_haplotypes; i++) {
+				if (dat->IL[i][l] == MISSING 
+						&& !opt->imputation_method) {
+					dat->missing_data = 1;
+					count_mis_val = 1;
+				} else if (dat->IL[i][l] < 0
+					&& dat->IL[i][l] != MISSING) {
+					return message(stderr, __FILE__,
+						__func__, __LINE__, ERROR_MSG,
+						INTERNAL_ERROR, "Cannot use "
+						"alleles as indices (option -I)"
+						" when there are alleles with "
+						"negative values %d at locus "
+						"%d in individual %d.\n",
+							dat->IL[i][l], l + 1,
+							i / dat->ploidy);
+				}
 				dat->uniquealleles[l] 
 					= MAX(dat->uniquealleles[l],
 						dat->IL[i][l] + 1);
-			if (opt->verbosity > MINIMAL)
+			}
+			if (count_mis_val)
+				++dat->uniquealleles[l];
+			if (opt->imputation_method) {
+				unsigned int max = 0, m = 0;
+				unsigned int *cnts = malloc(dat->uniquealleles[l] * sizeof(*cnts));
+
+				memset(cnts, 0, dat->uniquealleles[l] * sizeof(*cnts));
+				for (i=0; i < n_haplotypes; ++i)
+					if (dat->IL[i][l] != MISSING)
+						++cnts[dat->IL[i][l]];
+				for (j = 0; j < dat->uniquealleles[l]; ++j)
+					if (cnts[j] > max) {
+						max = cnts[j];
+						m = j;
+					}
+				for (i = 0; i < n_haplotypes; ++i)
+					if (dat->IL[i][l] == MISSING)
+						dat->IL[i][l] = m;
+				if (opt->verbosity > TALKATIVE)
+					mmessage(INFO_MSG, NO_ERROR, "Locus %d "
+						"missing value replaced by "
+						"allele %d with abundance %d.\n",
+								l, m, max);
+				free(cnts);
+			}
+			if (opt->verbosity > TALKATIVE)
 				fprintf(stderr, "Site %d: %4d alleles\n",
-					l+1, dat->uniquealleles[l]);
+					l + 1, dat->uniquealleles[l]);
 		} else {
 			/* copy locus l observations to locusgeno */
 			for (i = 0; i < n_haplotypes; i++)
@@ -325,24 +517,44 @@ int summarize_alleles(options *opt, data *dat)
 			while (k < n_haplotypes && locusgeno[k] == MISSING)
 				k++;
 			dat->uniquealleles[l] = 0;
-			if (k == n_haplotypes)
+			if (k == n_haplotypes)	/* all missing */
 				continue;
-			if (locusgeno[0] == MISSING) {
+			if (locusgeno[0] == MISSING
+						&& !opt->imputation_method) {
 				dat->missing_data = 1;
 				dat->uniquealleles[l] = 2;
-			} else
+			} else {
 				dat->uniquealleles[l] = 1;
+			}
+			m = max = j = 0;
 			for (k++; k < n_haplotypes; k++)
-				if (locusgeno[k] != locusgeno[k - 1])
+				if (locusgeno[k] != locusgeno[k - 1]) {
 					dat->uniquealleles[l]++;
+					if (m > max) {
+						max = m;
+						j = locusgeno[k - 1];
+					}
+				} else {
+					++m;
+				}
+			if (opt->imputation_method) {
+				if (opt->verbosity > TALKATIVE)
+					mmessage(INFO_MSG, NO_ERROR, "Locus %d "
+						"missing value replaced by "
+						"allele %d with abundance %d.\n",
+								l, j, max);
+				for (i = 0; i < n_haplotypes; ++i)
+					if (dat->IL[i][l] == MISSING)
+						dat->IL[i][l] = j;
+			}
 	
 		}
 		if (dat->uniquealleles[l] > dat->M)
 			dat->M = dat->uniquealleles[l];
-		if (opt->verbosity >= TALKATIVE && !(l % 100))
+		if (opt->verbosity == TALKATIVE && !(l % 100))
 			fprintf(stderr, ".");
 	}
-	if (opt->verbosity >= TALKATIVE)
+	if (opt->verbosity == TALKATIVE)
 		fprintf(stderr, "\n");
 
 	if (!opt->alleles_are_indices) {
@@ -357,11 +569,12 @@ int summarize_alleles(options *opt, data *dat)
 			for (i = 0; i < n_haplotypes; i++)
 				locusgeno[i] = dat->IL[i][l];
 	
-			bubbleSort(locusgeno, n_haplotypes);
+			bubbleSort(locusgeno, n_haplotypes);	/* [TODO] very bad idea to sort again! */
 	
 			/* copy unique alleles into L_alleles */
 			m = 0;
-			dat->L_alleles[l][m++] = locusgeno[0];
+			if (locusgeno[0] != MISSING)
+				dat->L_alleles[l][m++] = locusgeno[0];
 			for (k = 1; k < n_haplotypes; k++)
 				if (locusgeno[k] != locusgeno[k - 1])
 					dat->L_alleles[l][m++] = locusgeno[k];
@@ -408,10 +621,11 @@ void print_number_unique_alleles(data *dat)
  * all unique alleles at each locus in all individuals, the sufficient 
  * statistics.
  *
- * @param dat data object
+ * @param dat	data object
+ * @param opt	options object
  * @return void
  */
-int sufficient_statistics(data *dat)
+int sufficient_statistics(options *opt, data *dat)
 {
 	int i, j = 0, l = 0, m = 0, z_start, z_end;
 
@@ -422,10 +636,13 @@ int sufficient_statistics(data *dat)
 		for (i = 0; i < dat->I; i++) {			/* individual */
 			z_start = z_end;
 			z_end += dat->ploidy;
-			if (!dat->L_alleles)
+			if (!dat->L_alleles) {
 				for (j = z_start; j < z_end; j++)
-					dat->ILM[i][l][dat->IL[j][l]]++;
-			else {
+					if (dat->IL[j][l] != MISSING)
+						dat->ILM[i][l][dat->IL[j][l]]++;
+					else if (!opt->imputation_method)
+						dat->ILM[i][l][dat->uniquealleles[l]]++;
+			} else {
 				for (m = 0; m < dat->uniquealleles[l]; m++)
 								/* allele */
 					for (j = z_start; j < z_end; j++)
@@ -481,9 +698,12 @@ int count_columns(FILE *fp)
 		while (!feof(fp) && a != ' ' && a != '\t' && a != '\n')
 			a = fgetc(fp);
 		ncol++;
+		/* skip through trailing white space */
+		while (!feof(fp) && (a == ' ' || a == '\t'))
+			a = fgetc(fp);
 		if (a == '\n')	/* last column */
 			break;
-		/* skip through white space to next column  header */
+		/* skip through white space to next column header */
 		while (!feof(fp) && (a == ' ' || a == '\t'))
 			a = fgetc(fp);
 	}
