@@ -56,8 +56,8 @@ def master():
 
 processes = [ ]
 for i in range(20):
-    if(len(multiprocessing.active_children()) < multiprocessing.cpu_count()):
-        for j in range(multiprocessing.cpu_count()-len(multiprocessing.active_children())):
+    if(len(multiprocessing.active_children()) < len(os.sched_getaffinity(0))):
+        for j in range(len(os.sched_getaffinity(0))-len(multiprocessing.active_children())):
             ## for debugging
             print(str(len(multiprocessing.active_children())))
 
