@@ -2,6 +2,7 @@ import multiprocessing
 import time
 import random
 import subprocess
+import os
 
 unique_filename = "limit_workers_test"
 lock = multiprocessing.Lock()
