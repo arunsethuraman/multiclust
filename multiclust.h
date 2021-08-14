@@ -209,6 +209,7 @@ struct _options {
 	const char *outfile_name; 	/*!< allows user to create unique outfile name */
 	int simulate;			/*!< simulate data */
 	const char *simulate_outfile;	/*!< simulation data outfile */
+	int test_run; 			/*!< DEBUG ONLY: isolate for-loop in multiclust.c maximize_likelihood() */
 }; /* options */
 
 /**
