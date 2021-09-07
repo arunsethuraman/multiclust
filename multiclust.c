@@ -489,14 +489,9 @@ int maximize_likelihood(options* opt, data* dat, model* mod, int bootstrap)
 
 	if (opt->test_run){
 		for (i = 0; opt->target_revisit || opt->target_ll	/* targeting */
-			|| opt->n_seconds || i < opt->n_init; i++) {	/* timing */
-			mod->current_i = 0;
-			mod->current_l = 0;
-			mod->current_k = 0;
+			|| opt->n_seconds || i < opt->n_init; i++) {	/* timing *
 			mod->logL = 0.0;
 			mod->converged = 0;
-			mod->stopped = 0;
-			mod->iter_stop = 0;
 
 			/* initialize parameters */
 			if ((err = initialize_model(opt, dat, mod)))
@@ -508,25 +503,6 @@ int maximize_likelihood(options* opt, data* dat, model* mod, int bootstrap)
 
 			if (mod->converged)
 				mod->ever_converged = 1;
-
-			/* add iter/init statistics if converged or timed out */
-			if (mod->converged || (!mod->n_init && mod->time_stop)) {
-				mod->n_total_iter += mod->n_iter;
-				if (mod->n_max_iter < mod->n_iter)
-					mod->n_max_iter = mod->n_iter;
-				mod->n_init++;
-			}
-
-			/* solution already seen (up to convergence precision) */
-			if (mod->converged && converged(opt, mod, mod->first_max_logL)) {
-				mod->n_maxll_times++;
-				/* first occurrence of better solution */
-			}
-			else if (mod->converged && mod->logL > mod->first_max_logL) {
-				mod->n_maxll_times = 1;
-				mod->first_max_logL = mod->logL;
-				mod->n_maxll_init = mod->n_init;
-			}
 
 			/* record any better solution than previously seen */
 			if (mod->logL > mod->max_logL) {
