@@ -89,6 +89,11 @@ int read_file(options *opt, data *dat)
 	if (strcmp(name1, name2))
 		opt->interleaved = 1;
 
+	if (opt->verbosity >= TALKATIVE)
+		mmessage(INFO_MSG, NO_ERROR, "Detecting data as %sinterleaved "
+			"based on the names of the first two individuals: %s, "
+			"%s.\n", opt->interleaved ? "" : "not ", name1, name2);
+
 	free(name1);
 	free(name2);
 

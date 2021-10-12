@@ -518,9 +518,9 @@ int maximize_likelihood(options* opt, data* dat, model* mod, int bootstrap)
 		/* solution already seen (up to convergence precision) */
 		if (mod->converged && converged(opt, mod, mod->first_max_logL)) {
 			mod->n_maxll_times++;
-			/* first occurrence of better solution */
-		}
-		else if (mod->converged && mod->logL > mod->first_max_logL) {
+
+		/* first occurrence of better solution */
+		} else if (mod->converged && mod->logL > mod->first_max_logL) {
 			mod->n_maxll_times = 1;
 			mod->first_max_logL = mod->logL;
 			mod->n_maxll_init = mod->n_init;
@@ -556,14 +556,14 @@ int maximize_likelihood(options* opt, data* dat, model* mod, int bootstrap)
 			/* write results to file if not bootstrap run */
 			if (!bootstrap && opt->write_files) {
 				/* TODO [KSD]: overwriting potentially many
-				 * times for big data is bad */
+				 * times for big data bad, but convenient!
+				 */
 				if (opt->admixture) {
 					partition_admixture(dat, mod);
 					write_file_detail(opt, dat, mod);
 					popq_admix(opt, dat, mod);
 					indivq_admix(opt, dat, mod);
-				}
-				else {
+				} else {
 					partition_mixture(dat, mod);
 					write_file_detail(opt, dat, mod);
 					popq_mix(opt, dat, mod);
@@ -587,7 +587,7 @@ int maximize_likelihood(options* opt, data* dat, model* mod, int bootstrap)
 
 		//print_param(opt, dat, mod, mod->tindex);
 
-				/* output information if sufficiently verbose and not -w */
+		/* output information if sufficiently verbose and not -w */
 		if (!bootstrap && opt->verbosity > QUIET && opt->write_files)
 			fprintf(stdout, "K = %d, initialization = %d: %f "
 				"(%s) in %3d iterations, %02d:%02d:%02d (%f; %d), seed: %u\n",

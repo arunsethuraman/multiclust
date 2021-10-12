@@ -30,21 +30,25 @@ Sample commands:
 :Arun Sethuraman
 
 TODO
+[KSD, Fri Jul 23 2021] Write a method to impute (and optionally write the data
+with imputed values to file) before running the algorithms. ADMIXTURE somehow
+imputes the missing data, though it is not explained how, so it is hard to
+compare outcomes on data with missingness.
+
 [KSD] Get rid of dat->IL data matrix.  I don't think it is seriously needed for
 anything.  Or write parallel code for IL or ILM matrix, but not both.
 Other than read_file.c, where dat->IL is used to hold the data read in from
 file before processing, only rnd_init.c seems to rely on dat->IL in a
 non-routine way, but that code is hardly optimal or even very logical.
 For very large datasets, the data should be read in a different way to avoid
-simultaneous allocation of dat->IL and dat->ILM.
+simultaneous allocation of dat->IL and dat->ILM.  I have added some
+comments/analysis in e_step_admixture() and m_step_admixture() functions about
+different versions that use different amounts of memory and have different
+complexity.  This is where there could be parallel versions using either dat->IL
+vs. dat->ILM depending on data structure.
 
 [KSD] Sites which show no variation across all individuals are useless.  One
 way to speed up the calculations is to compress the data by removing such sites
 and restoring them at the end during write out.
-
-[KSD] I have added some comments/analysis in e_step_admixture() and
-m_step_admixture() functions about different versions that use different
-amounts of memory and have different complexity.  This is where there could be
-parallel versions using either dat->IL vs. dat->ILM depending on data structure.
 
 [KSD] There are also TODO flags throughout the code.

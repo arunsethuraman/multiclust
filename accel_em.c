@@ -81,7 +81,7 @@ int accelerated_em_step(options *opt, data *dat, model *mod)
 
 	} while (n_adjust++ < opt->adjust_step && ll < emll && s < -1);
 
-	if (opt->verbosity > MINIMAL)
+	if (opt->verbosity > TALKATIVE)
 		fprintf(stderr, "accelerated_em_step (%s): aEM %f %s EM %f (step size: %f)\n", 
 			ll > emll ? opt->accel_abbreviation : "EM",
 			ll, ll > emll ? ">" : "<", emll, s);
