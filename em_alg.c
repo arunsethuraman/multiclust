@@ -173,9 +173,10 @@ int converged(options *opt, model *mod, double loglik)
 } /* converged */
 
 /**
- * One iteration of EM.  This function does one iteration of the EM algorithm
- * in place, meaning that the current parameter values are replaced with the
- * new ones in place, dicarding the old.
+ * One iteration of EM.  This function does one iteration of the EM algorithm,
+ * using previous parameter estimates in _model::findex and placing updated
+ * parameter estimates in _model::tindex, which is in place by default and
+ * if #define OLDWAY.
  *
  * @param opt options object
  * @param dat data object
@@ -292,8 +293,8 @@ double e_step_admixture_orig(options *opt, data *dat, model *mod)
 */
 
 	/* TIME COMPLEXITY (let T = A_1 + ... + A_L) */
-	/* current version: I*K*T*(2*K+3) \propt I*K^2*T */
-	/* faster version: I*K*L*M*(2*K + 2) */
+	/* current version: I*K*T*(2*K+3) \propto I*K^2*T */
+	/* faster version: I*K*L*M*(2*K + 2) \propto I*K^2*L*M and L*M>T*/
 	/* compare for full EM cycle):		current	vs. faster
 		5*I*K*T + 2*I*K^2*T + 2*I*K + 2*K*T	vs. 2*I*K^2*L*M + 4*I*K*L*M + 2*I*K + I*K*M + 2*K*T
 		5*I*K*T + 2*I*K^2*T			vs. 2*I*K^2*L*M + 4*I*K*L*M + I*K*M
@@ -382,8 +383,7 @@ double e_step_admixture_orig(options *opt, data *dat, model *mod)
 						= dat->ILM[i][l][m]
 						* exp(ldilmk[k])/tmp;
 */
-				loglik += dat->ILM[i][l][m] * log(tmp)
-				;
+				loglik += dat->ILM[i][l][m] * log(tmp);
 /*
 				+ scale;
 */
@@ -586,8 +586,10 @@ void m_step_admixture_orig(options *opt, data *dat, model *mod)
 	int i, k, l, m, m_start;
 	double temp;
 
-	/* TIME COMPLEXITY: I*K*(2+T) + K*T*(I+2) */
-	/* FASTER VERSION: I*K*(2 + M) + K*(2*T + 2*L*M*I) */
+	/* TIME COMPLEXITY: 2*I*K*(1 + T)         + 2*K*T */
+	/* FASTER VERSION:  2*I*K*(1 + L*M + M/2) + 2*K*T */
+	/* T <= L*M with equality if same number of alleles per site */
+	/* M << T if L is large */
 
 	/* estimate new eta_k or eta_{ik} */
 	if (!opt->admixture || opt->eta_constrained) {
@@ -740,7 +742,7 @@ void m_step_admixture_orig(options *opt, data *dat, model *mod)
 		}
 	}
 	//print_param(opt, dat, mod, mod->tindex);
-} /* End of m_step_admixture */
+} /* End of m_step_admixture_orig */
 	
 /**
  * E step for mixture model.
@@ -1006,6 +1008,8 @@ double scale_log_sum(double *v, int n, double max_v)
  * require storage of previous three iterations or two sets of differences.
  * This function takes these steps and stores the parameters/differences.
  *
+ * In the process of updating...
+ *
  * @param mod model object
  * @param dat data object 
  * @param opt options object
@@ -1027,6 +1031,7 @@ int em_2_steps(model *mod, data *dat, options *opt)
 	mod->tindex = (mod->findex + 1) % 3;
 
 	for (j = 0; j < 2; j++) {
+		/* read _model::findex, update _model::tindex */
 		if (em_step(opt, dat, mod))
 			return 1;
 		if (debug>1) print_param(opt, dat, mod, mod->tindex);
