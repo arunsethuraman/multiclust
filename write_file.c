@@ -22,6 +22,7 @@
 int write_data(options *opt, data *dat, char const *outfile, int use_ILM)
 {
 	int i, j, l, m, msum, r, r2;
+	int haplotype_no;
 	char *filename = NULL;
 	FILE *fp;
 
@@ -61,7 +62,8 @@ int write_data(options *opt, data *dat, char const *outfile, int use_ILM)
 
 	if (!use_ILM) {
 		if (opt->output_format == STRUCTURE) {
-			for (i = 0; i < dat->I; i += dat->ploidy)
+			for (i = 0; i < dat->I; ++i) {
+				haplotype_no = dat->ploidy * i;
 				for (j = 0; j < dat->ploidy; j++) {
 					if (dat->idv)
 						fprintf(fp, "%s %s",
@@ -72,12 +74,14 @@ int write_data(options *opt, data *dat, char const *outfile, int use_ILM)
 					for (l = 0; l < dat->L; l++)
 						fprintf(fp, " %d",
 							opt->write_plus_one 
-							? dat->IL[i + j][l] + 1 
-							: dat->IL[i + j][l]);
+							? dat->IL[haplotype_no + j][l] + 1 
+							: dat->IL[haplotype_no + j][l]);
 					fprintf(fp, "\n");
 				}
+			}
 		} else {
-			for (i = 0; i < dat->I; i += dat->ploidy) {
+			for (i = 0; i < dat->I; ++i ) {
+				haplotype_no = dat->ploidy * i;
 				if (dat->idv)
 					fprintf(fp, "%s %s 0 0 0 -9",
 						dat->idv[i].name,
@@ -88,8 +92,8 @@ int write_data(options *opt, data *dat, char const *outfile, int use_ILM)
 					for (j = 0; j < dat->ploidy; ++j) {
 						fprintf(fp, " %d",
 							opt->write_plus_one
-							? dat->IL[i + j][l] + 1
-							: dat->IL[i + j][l]);
+							? dat->IL[haplotype_no + j][l] + 1
+							: dat->IL[haplotype_no + j][l]);
 					}
 				}
 				fprintf(fp, "\n");
@@ -479,14 +483,14 @@ int indivq_admix(options* opt, data* dat, model* mod)
 	int err = NO_ERROR;
 
 	if (opt->outfile_name != NULL) {
-		len = strlen(opt->outfile_name) + 23 + (int)(log(mod->K) / log(10));
+		len = strlen(opt->outfile_name) + 23 + (int) log10(mod->K);
 		MAKE_1ARRAY(outfile, len);
 		if ((err = errno))
 			goto FREE_AND_RETURN;
 		sprintf(outfile, "%s_admix_indivq_%d.indivq", opt->outfile_name, mod->K);
 	}
 	else {
-		len = strlen(opt->path) + strlen(opt->filename) + 23 + (int)(log(mod->K) / log(10));
+		len = strlen(opt->path) + strlen(opt->filename) + 23 + (int) log10(mod->K);
 		MAKE_1ARRAY(outfile, len);
 		if ((err = errno))
 			goto FREE_AND_RETURN;
@@ -675,14 +679,13 @@ int indivq_mix(options* opt, data* dat, model* mod)
 	FILE* fp;
 
 	if (opt->outfile_name != NULL) {
-		len = strlen(opt->outfile_name) + 18;
+		len = strlen(opt->outfile_name) + 16 + (int) log10(mod->K);
 		MAKE_1ARRAY(outfile, len);
-		sprintf(outfile, "%s.mix_indivq.indivq", opt->outfile_name);
-	}
-	else {
-		len = strlen(opt->path) + strlen(opt->filename) + 18;
+		sprintf(outfile, "%s.mix.K=%d.indivq", opt->outfile_name, mod->K);
+	} else {
+		len = strlen(opt->path) + strlen(opt->filename) + 16 + (int) log10(mod->K);
 		MAKE_1ARRAY(outfile, len);
-		sprintf(outfile, "%s%smix_indivq.indivq", opt->path, opt->filename);
+		sprintf(outfile, "%s%s.mix.K=%d.indivq", opt->path, opt->filename, mod->K);
 	}
 	if ((fp = fopen(outfile, "w")) == NULL) {
 		FREE_1ARRAY(outfile);

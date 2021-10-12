@@ -487,172 +487,171 @@ int maximize_likelihood(options* opt, data* dat, model* mod, int bootstrap)
 
 	mod->start = clock();
 
-	if (opt->test_run){
-		for (i = 0; opt->target_revisit || opt->target_ll	/* targeting */
-			|| opt->n_seconds || i < opt->n_init; i++) {	/* timing *
-			mod->logL = 0.0;
-			mod->converged = 0;
+/* Madeline's simpler version */
+if (opt->test_run){
+	for (i = 0; opt->target_revisit || opt->target_ll	/* targeting */
+		|| opt->n_seconds || i < opt->n_init; i++) {	/* timing *
+		mod->logL = 0.0;
+		mod->converged = 0;
 
-			/* initialize parameters */
-			if ((err = initialize_model(opt, dat, mod)))
-				return err;
+		/* initialize parameters */
+		if ((err = initialize_model(opt, dat, mod)))
+			return err;
 
-			/* maximize likelihood */
-			em(opt, dat, mod);
-			/* !_model::converged b/c _model::iter_stop || _model::time_stop */
+		/* maximize likelihood */
+		em(opt, dat, mod);
+		/* !_model::converged b/c _model::iter_stop || _model::time_stop */
 
-			if (mod->converged)
-				mod->ever_converged = 1;
+		if (mod->converged)
+			mod->ever_converged = 1;
 
-			/* record any better solution than previously seen */
-			if (mod->logL > mod->max_logL) {
-				mod->max_logL = mod->logL;
-				mod->aic = aic(mod);
-				mod->bic = bic(dat, mod);
+		/* record any better solution than previously seen */
+		if (mod->logL > mod->max_logL) {
+			mod->max_logL = mod->logL;
+			mod->aic = aic(mod);
+			mod->bic = bic(dat, mod);
+		}
+	}
+} else {
+	for (i = 0; opt->target_revisit || opt->target_ll	/* targeting */
+		|| opt->n_seconds || i < opt->n_init; i++) {	/* timing */
+		 mod->current_i = 0;
+		 mod->current_l = 0;
+		 mod->current_k = 0;
+		 mod->logL = 0.0;
+		 mod->converged = 0;
+		 mod->stopped = 0;
+		 mod->iter_stop = 0;
+
+		 /* initialize parameters */
+		 if ((err = initialize_model(opt, dat, mod)))
+			 return err;
+	
+		 /* maximize likelihood */
+		 em(opt, dat, mod);
+		 /* !_model::converged b/c _model::iter_stop || _model::time_stop */
+	
+		 if (mod->converged)
+			 mod->ever_converged = 1;
+	
+		 /* add iter/init statistics if converged or timed out */
+		 if (mod->converged || (!mod->n_init && mod->time_stop)) {
+			 mod->n_total_iter += mod->n_iter;
+			 if (mod->n_max_iter < mod->n_iter)
+				 mod->n_max_iter = mod->n_iter;
+			 mod->n_init++;
+		 }
+	
+		 /* solution already seen (up to convergence precision) */
+		 if (mod->converged && converged(opt, mod, mod->first_max_logL)) {
+			 mod->n_maxll_times++;
+			 /* first occurrence of better solution */
+		 }
+		 else if (mod->converged && mod->logL > mod->first_max_logL) {
+			 mod->n_maxll_times = 1;
+			 mod->first_max_logL = mod->logL;
+			 mod->n_maxll_init = mod->n_init;
+		 }
+	
+		 /* record any better solution than previously seen */
+		 if (mod->logL > mod->max_logL) {
+			 mod->max_logL = mod->logL;
+			 mod->aic = aic(mod);
+			 mod->bic = bic(dat, mod);
+	
+			 /* save mles if not bootstrap run and this is H0 */
+			 if (!bootstrap && opt->n_bootstrap && mod->K == mod->null_K) {
+#ifndef OLDWAY
+				 COPY_3JAGGED_ARRAY(mod->mle_pKLM, mod->vpklm[mod->pindex], dat->uniquealleles);
+#else
+				 COPY_3JAGGED_ARRAY(mod->mle_pKLM, mod->pKLM, dat->uniquealleles);
+#endif
+				 if (!opt->admixture || opt->eta_constrained)
+#ifndef OLDWAY
+					 COPY_1ARRAY(mod->mle_etak, mod->vetak[mod->pindex], mod->K);
+#else
+					 COPY_1ARRAY(mod->mle_etak, mod->etak, mod->K);
+#endif
+				 else
+#ifndef OLDWAY
+					 COPY_2ARRAY(mod->mle_etaik, mod->vetaik[mod->pindex], mod->K);
+#else
+					 COPY_2ARRAY(mod->mle_etaik, mod->etaik, mod->K);
+#endif
+			}
+
+			/* write results to file if not bootstrap run */
+			if (!bootstrap && opt->write_files) {
+				/* TODO [KSD]: overwriting potentially many
+				 * times for big data bad, but convenient!
+				 */
+				if (opt->admixture) {
+					partition_admixture(dat, mod);
+					write_file_detail(opt, dat, mod);
+					popq_admix(opt, dat, mod);
+					indivq_admix(opt, dat, mod);
+				} else {
+					partition_mixture(dat, mod);
+					write_file_detail(opt, dat, mod);
+					popq_mix(opt, dat, mod);
+					indivq_mix(opt, dat, mod);
+				}
+
+			}
+
+			if (opt->afile) {
+				if (!opt->write_files) {
+					if (opt->admixture)
+						partition_admixture(dat, mod);
+					else
+						partition_mixture(dat, mod);
+				}
+				mod->arand = adj_rand(dat->I, opt->pK, mod->K,
+					opt->partition_from_file, dat->I_K,
+					ADJUSTED_RAND_INDEX);
 			}
 		}
-}
-else {
- for (i = 0; opt->target_revisit || opt->target_ll	/* targeting */
-	 || opt->n_seconds || i < opt->n_init; i++) {	/* timing */
-	 mod->current_i = 0;
-	 mod->current_l = 0;
-	 mod->current_k = 0;
-	 mod->logL = 0.0;
-	 mod->converged = 0;
-	 mod->stopped = 0;
-	 mod->iter_stop = 0;
 
-	 /* initialize parameters */
-	 if ((err = initialize_model(opt, dat, mod)))
-		 return err;
+		//print_param(opt, dat, mod, mod->tindex);
 
-	 /* maximize likelihood */
-	 em(opt, dat, mod);
-	 /* !_model::converged b/c _model::iter_stop || _model::time_stop */
+		/* output information if sufficiently verbose and not -w */
+		if (!bootstrap && opt->verbosity > QUIET && opt->write_files)
+			fprintf(stdout, "K = %d, initialization = %d: %f "
+				"(%s) in %3d iterations, %02d:%02d:%02d (%f; %d), seed: %u\n",
+				mod->K, i, mod->logL,
+				mod->converged ? "converged" : "not converged",
+				mod->n_iter,
+				(int)(mod->seconds_run / 3600),
+				(int)((((int)mod->seconds_run) % 3600) / 60),
+				(((int)mod->seconds_run) % 60), mod->max_logL,
+				mod->n_maxll_times, opt->seed);
 
-	 if (mod->converged)
-		 mod->ever_converged = 1;
+		/* global mle if K=1; no need for multiple initializations */
+		if (mod->K == 1)
+			break;
 
-	 /* add iter/init statistics if converged or timed out */
-	 if (mod->converged || (!mod->n_init && mod->time_stop)) {
-		 mod->n_total_iter += mod->n_iter;
-		 if (mod->n_max_iter < mod->n_iter)
-			 mod->n_max_iter = mod->n_iter;
-		 mod->n_init++;
-	 }
+		/* stop if used too much time */
+		if (mod->time_stop)
+			break;
 
-	 /* solution already seen (up to convergence precision) */
-	 if (mod->converged && converged(opt, mod, mod->first_max_logL)) {
-		 mod->n_maxll_times++;
-		 /* first occurrence of better solution */
-	 }
-	 else if (mod->converged && mod->logL > mod->first_max_logL) {
-		 mod->n_maxll_times = 1;
-		 mod->first_max_logL = mod->logL;
-		 mod->n_maxll_init = mod->n_init;
-	 }
+		/* stop if sufficient repeat of same best solution */
+		if (opt->target_revisit
+			&& mod->n_maxll_times >= opt->target_revisit)
+			break;
 
-	 /* record any better solution than previously seen */
-	 if (mod->logL > mod->max_logL) {
-		 mod->max_logL = mod->logL;
-		 mod->aic = aic(mod);
-		 mod->bic = bic(dat, mod);
-
-		 /* save mles if not bootstrap run and this is H0 */
-		 if (!bootstrap && opt->n_bootstrap && mod->K == mod->null_K) {
-#ifndef OLDWAY
-			 COPY_3JAGGED_ARRAY(mod->mle_pKLM, mod->vpklm[mod->pindex], dat->uniquealleles);
-#else
-			 COPY_3JAGGED_ARRAY(mod->mle_pKLM, mod->pKLM, dat->uniquealleles);
-#endif
-			 if (!opt->admixture || opt->eta_constrained)
-#ifndef OLDWAY
-				 COPY_1ARRAY(mod->mle_etak, mod->vetak[mod->pindex], mod->K);
-#else
-				 COPY_1ARRAY(mod->mle_etak, mod->etak, mod->K);
-#endif
-			 else
-#ifndef OLDWAY
-				 COPY_2ARRAY(mod->mle_etaik, mod->vetaik[mod->pindex], mod->K);
-#else
-				 COPY_2ARRAY(mod->mle_etaik, mod->etaik, mod->K);
-#endif
-		 }
-
-		 /* write results to file if not bootstrap run */
-		 if (!bootstrap && opt->write_files) {
-			 /* TODO [KSD]: overwriting potentially many
-			  * times for big data is bad */
-			 if (opt->admixture) {
-				 partition_admixture(dat, mod);
-				 write_file_detail(opt, dat, mod);
-				 popq_admix(opt, dat, mod);
-				 indivq_admix(opt, dat, mod);
-			 }
-			 else {
-				 partition_mixture(dat, mod);
-				 write_file_detail(opt, dat, mod);
-				 popq_mix(opt, dat, mod);
-				 indivq_mix(opt, dat, mod);
-			 }
-
-		 }
-
-		 if (opt->afile) {
-			 if (!opt->write_files) {
-				 if (opt->admixture)
-					 partition_admixture(dat, mod);
-				 else
-					 partition_mixture(dat, mod);
-			 }
-			 mod->arand = adj_rand(dat->I, opt->pK, mod->K,
-				 opt->partition_from_file, dat->I_K,
-				 ADJUSTED_RAND_INDEX);
-		 }
-	 }
-
-	 //print_param(opt, dat, mod, mod->tindex);
-
-			 /* output information if sufficiently verbose and not -w */
-	 if (!bootstrap && opt->verbosity > QUIET && opt->write_files)
-		 fprintf(stdout, "K = %d, initialization = %d: %f "
-			 "(%s) in %3d iterations, %02d:%02d:%02d (%f; %d), seed: %u\n",
-			 mod->K, i, mod->logL,
-			 mod->converged ? "converged" : "not converged",
-			 mod->n_iter,
-			 (int)(mod->seconds_run / 3600),
-			 (int)((((int)mod->seconds_run) % 3600) / 60),
-			 (((int)mod->seconds_run) % 60), mod->max_logL,
-			 mod->n_maxll_times, opt->seed);
-
-	 /* global mle if K=1; no need for multiple initializations */
-	 if (mod->K == 1)
-		 break;
-
-	 /* stop if used too much time */
-	 if (mod->time_stop)
-		 break;
-
-	 /* stop if sufficient repeat of same best solution */
-	 if (opt->target_revisit
-		 && mod->n_maxll_times >= opt->target_revisit)
-		 break;
-
-	 /* stop if reach (sufficient times) target log likelihood */
-	 if (opt->target_ll && (mod->logL > opt->desired_ll
-		 || converged(opt, mod, opt->desired_ll))) {
-		 if (!mod->n_targetll_times)
-			 mod->n_targetll_init = mod->n_init;
-		 mod->n_targetll_times++;
-		 if (!opt->target_revisit)
-			 break;
-		 else if (opt->target_revisit <= mod->n_targetll_times)
-			 break;
-	 }
-
+		/* stop if reach (sufficient times) target log likelihood */
+		if (opt->target_ll && (mod->logL > opt->desired_ll
+			|| converged(opt, mod, opt->desired_ll))) {
+			if (!mod->n_targetll_times)
+				mod->n_targetll_init = mod->n_init;
+			mod->n_targetll_times++;
+			if (!opt->target_revisit)
+				break;
+			else if (opt->target_revisit <= mod->n_targetll_times)
+				break;
+		}
 	}
- }
+}
 	return err;
 } /* End of maximize_likelihood(). */
 
