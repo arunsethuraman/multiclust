@@ -1089,7 +1089,11 @@ int em_2_steps(model *mod, data *dat, options *opt)
 	mod->findex = mod->pindex;
 	mod->tindex = (mod->findex + 1) % 3;
 
+#ifdef NEWWAY
+	for (j = 0; j < 1; j++) {
+#else
 	for (j = 0; j < 2; j++) {
+#endif
 		/* read _model::findex, update _model::tindex */
 		if (em_step(opt, dat, mod))
 			return 1;
@@ -1101,11 +1105,18 @@ int em_2_steps(model *mod, data *dat, options *opt)
 			for (l = 0; l < dat->L; l++) {
 				for (m = dat->L_alleles && dat->L_alleles[l][0] == MISSING;
 					m < dat->uniquealleles[l]; m++) {
+#ifndef NEWWAY
 					if (!j)
 						mod->u_pklm[mod->delta_index][k][l][m]
 							= mod->vpklm[mod->tindex][k][l][m]
 							- mod->vpklm[mod->findex][k][l][m];
+#else
+						mod->u_pklm[mod->delta_index][k][l][m]
+							= mod->v_pklm[mod->delta_index][k][l][m];
+#endif
+#ifndef NEWWAY
 					else
+#endif
 						mod->v_pklm[mod->delta_index][k][l][m]
 							= mod->vpklm[mod->tindex][k][l][m]
 							- mod->vpklm[mod->findex][k][l][m];
@@ -1114,22 +1125,36 @@ int em_2_steps(model *mod, data *dat, options *opt)
 		if (opt->admixture && !opt->eta_constrained)
 			for (i = 0; i < dat->I; i++)
 				for (k = 0; k < mod->K; k++) {
+#ifndef NEWWAY
 					if (!j)
 						mod->u_etaik[mod->delta_index][i][k]
 							= mod->vetaik[mod->tindex][i][k]
 							- mod->vetaik[mod->findex][i][k];
+#else
+						mod->u_etaik[mod->delta_index][i][k]
+							= mod->v_etaik[mod->delta_index][i][k];
+#endif
+#ifndef NEWWAY
 					else
+#endif
 						mod->v_etaik[mod->delta_index][i][k]
 							= mod->vetaik[mod->tindex][i][k]
 							- mod->vetaik[mod->findex][i][k];
 				}
 		else
 			for (k = 0; k < mod->K; k++) {
+#ifndef NEWWAY
 				if (!j)
 					mod->u_etak[mod->delta_index][k]
 						= mod->vetak[mod->tindex][k]
 						- mod->vetak[mod->findex][k];
+#else
+					mod->u_etak[mod->delta_index][k]
+						= mod->v_etak[mod->delta_index][k];
+#endif
+#ifndef NEWWAY
 				else
+#endif
 					mod->v_etak[mod->delta_index][k]
 						= mod->vetak[mod->tindex][k]
 						- mod->vetak[mod->findex][k];

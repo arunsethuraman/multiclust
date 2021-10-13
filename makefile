@@ -15,6 +15,10 @@ ifdef OLDWAY
 	CFLAGS := $(CFLAGS) -DOLDWAY
 endif
 
+ifdef NEWWAY
+	CFLAGS := $(CFLAGS) -DNEWWAY
+endif
+
 ifdef LAPACK
 	CFLAGS := $(CFLAGS) -DLAPACK
 	LDFLAGS := $(LDFLAGS) -llapack
