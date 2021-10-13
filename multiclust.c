@@ -490,7 +490,7 @@ int maximize_likelihood(options* opt, data* dat, model* mod, int bootstrap)
 /* Madeline's simpler version */
 if (opt->test_run){
 	for (i = 0; opt->target_revisit || opt->target_ll	/* targeting */
-		|| opt->n_seconds || i < opt->n_init; i++) {	/* timing *
+		|| opt->n_seconds || i < opt->n_init; i++) {	/* timing */
 		mod->logL = 0.0;
 		mod->converged = 0;
 
@@ -1729,7 +1729,7 @@ void fprint_usage(FILE* fp, const char* invocation_name, void* obj)
 		prog_name);
 	fprintf(fp, "\nSYNOPSIS\n");
 	fprintf(fp,
-		"\t%s [-k <n> | -1 <n> -2 <n>] [-a -b -B <n> -bou <d> -c -C <n> -d <s> -e <d> -E <d> -f <d> -g <d> -h"
+		"\t%s [-k <n> | -1 <n> -2 <n>] [-a -b <n> -B -bou <d> -c -C <n> -d <s> -e <d> -E <d> -f <d> -g <d> -h"
 		"\n\t\t-i <n> -I -m <n> --missing <n> -M <n> -n <n> -o <s> -p <n> --projection --plus -R -s <n> -t <n> -T <d> -u <s> -v -w <s> -x] -f <s> --format <s>"
 		"\n\t\t--simulate <qfile> <pfile> <ofile>"
 		"\n\n\t\twhere <n> stands for integer, <s> for string, <d> for double",
