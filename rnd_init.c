@@ -468,13 +468,13 @@ void random_allele_partition(data *dat, model *mod)
 				/* alleles are not array indices */
 				if (dat->L_alleles) {
 					for (m = m_start; m < dat->uniquealleles[l]; m++)
-						if (dat->IL[2*i + a][l] == dat->L_alleles[l][m]) {
+						if (dat->IL[dat->ploidy*i + a][l] == dat->L_alleles[l][m]) {
 							mod->diklm[i][k][l][m] = 1;
 //fprintf(stderr, "%d %d %d: %d\n", i, l, dat->IL[2*i + a][l], k);
 						}
 				/* alleles are array indices */
 				} else {
-					mod->diklm[i][k][l][dat->IL[2*i + a][l]] = 1;
+					mod->diklm[i][k][l][dat->IL[dat->ploidy*i + a][l]] = 1;
 				}
 //				dat->IL_K[2*i+a][l] = (int) rand() % mod->K;
 			}

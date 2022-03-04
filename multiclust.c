@@ -971,6 +971,8 @@ int make_options(options** opt)
 	(*opt)->admix_pfile = NULL;
 	(*opt)->simulate_outfile = "sim.stru";
 
+	(*opt)->test_run = 0;
+
 	return NO_ERROR;
 } /* make_options */
 

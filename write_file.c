@@ -215,17 +215,25 @@ int write_file_detail(options* opt, data* dat, model* mod)
 			opt->admixture ? "admix" : "mix", mod->K);
 	}
 	else {
+		size_t base_idx = strlen(opt->filename);
+		while (base_idx-- > 0 && opt->filename[base_idx] != '/' && opt->filename[base_idx] != '\\');
+		if (base_idx || opt->filename[base_idx] == '/' || opt->filename[base_idx] == '\\')
+			++base_idx;
 		/* compute length of output filename */
-		len = strlen(opt->path) + strlen(opt->filename) + (int)(log(mod->K) / log(10)) + 21;
+		len = strlen(opt->path) + strlen(&opt->filename[base_idx]) + 
+			+ (opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\')
+			+ (int)(log(mod->K) / log(10)) + 21;
 		MAKE_1ARRAY(outfile, len);
-		sprintf(outfile, "%s%s.%s.K=%d.out.txt", opt->path, opt->filename,
+		sprintf(outfile, "%s%s%s.%s.K=%d.out.txt", opt->path,
+			opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+			&opt->filename[base_idx],
 			opt->admixture ? "admix" : "mix", mod->K);
 	}
-	
 	if ((fp = fopen(outfile, "w")) == NULL) {
-		FREE_1ARRAY(outfile);
-		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
+		int err_no = message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
 			FILE_OPEN_ERROR, outfile);
+		FREE_1ARRAY(outfile);
+		return err_no;
 	}
 
 	fprintf(fp, "logL = %f (%s)\n", mod->logL,
