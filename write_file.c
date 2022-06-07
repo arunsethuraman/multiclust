@@ -215,18 +215,20 @@ int write_file_detail(options* opt, data* dat, model* mod)
 			opt->admixture ? "admix" : "mix", mod->K);
 	}
 	else {
+		/*
 		size_t base_idx = strlen(opt->filename);
 		while (base_idx-- > 0 && opt->filename[base_idx] != '/' && opt->filename[base_idx] != '\\');
 		if (base_idx || opt->filename[base_idx] == '/' || opt->filename[base_idx] == '\\')
 			++base_idx;
+		 */
 		/* compute length of output filename */
-		len = strlen(opt->path) + strlen(&opt->filename[base_idx]) + 
+		len = strlen(opt->path) + strlen(opt->filename_file) + //[base_idx]) + 
 			+ (opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\')
 			+ (int)(log(mod->K) / log(10)) + 21;
 		MAKE_1ARRAY(outfile, len);
 		sprintf(outfile, "%s%s%s.%s.K=%d.out.txt", opt->path,
 			opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
-			&opt->filename[base_idx],
+			opt->filename_file, //[base_idx],
 			opt->admixture ? "admix" : "mix", mod->K);
 	}
 	if ((fp = fopen(outfile, "w")) == NULL) {
@@ -253,7 +255,9 @@ int write_file_detail(options* opt, data* dat, model* mod)
 				opt->admixture ? "admix" : "mix", mod->K);
 		}
 		else {
-			sprintf(outfile, "%s%s.%s.K=%d.etak.txt", opt->path, opt->filename,
+			sprintf(outfile, "%s%s%s.%s.K=%d.etak.txt", opt->path, //opt->filename
+				opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+				opt->filename_file,
 				opt->admixture ? "admix" : "mix", mod->K);
 		}
 		if ((fp = fopen(outfile, "w")) == NULL)
@@ -275,7 +279,9 @@ int write_file_detail(options* opt, data* dat, model* mod)
 				opt->admixture ? "admix" : "mix", mod->K);
 		}
 		else {
-			sprintf(outfile, "%s%s.%s.K=%d.etaik.txt", opt->path, opt->filename,
+			sprintf(outfile, "%s%s%s.%s.K=%d.etaik.txt", opt->path, //opt->filename,
+				opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+				opt->filename_file,
 				opt->admixture ? "admix" : "mix", mod->K);
 		}
 		if ((fp = fopen(outfile, "w")) == NULL)
@@ -300,7 +306,9 @@ int write_file_detail(options* opt, data* dat, model* mod)
 			opt->admixture ? "admix" : "mix", mod->K);
 	}
 	else {
-		sprintf(outfile, "%s%s.%s.K=%d.pklm.txt", opt->path, opt->filename,
+		sprintf(outfile, "%s%s%s.%s.K=%d.pklm.txt", opt->path, //opt->filename,
+			opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+			opt->filename_file,
 			opt->admixture ? "admix" : "mix", mod->K);
 	}
 	
@@ -412,12 +420,13 @@ int popq_admix(options* opt, data* dat, model* mod)
 			mod->K);
 	}
 	else {
-		len = strlen(opt->path) + strlen(opt->filename) + 19 + (int) log10(mod->K);
+		len = strlen(opt->path) + strlen(opt->filename_file) + 19 + (int) log10(mod->K);
 		MAKE_1ARRAY(outfile, len);
 		if ((err = errno))
 			goto FREE_AND_RETURN;
-		sprintf(outfile, "%s%s_admix_popq_%d.popq", opt->path, opt->filename,
-			mod->K);
+		sprintf(outfile, "%s%s%s_admix_popq_%d.popq", opt->path, 
+			opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+			opt->filename_file, mod->K);
 	}
 	
 	if ((fp = fopen(outfile, "w")) == NULL) {
@@ -498,11 +507,13 @@ int indivq_admix(options* opt, data* dat, model* mod)
 		sprintf(outfile, "%s_admix_indivq_%d.indivq", opt->outfile_name, mod->K);
 	}
 	else {
-		len = strlen(opt->path) + strlen(opt->filename) + 23 + (int) log10(mod->K);
+		len = strlen(opt->path) + strlen(opt->filename_file) + 23 + (int) log10(mod->K);
 		MAKE_1ARRAY(outfile, len);
 		if ((err = errno))
 			goto FREE_AND_RETURN;
-		sprintf(outfile, "%s%s_admix_indivq_%d.indivq", opt->path, opt->filename, mod->K);
+		sprintf(outfile, "%s%s%s_admix_indivq_%d.indivq", opt->path, 
+			opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+			opt->filename_file, mod->K);
 	}
 	
 	if ((fp = fopen(outfile, "w")) == NULL) {
@@ -621,11 +632,13 @@ int popq_mix(options* opt, data* dat, model* mod)
 	}
 	else {
 		/* compute length of output filename */
-		len = strlen(opt->path) + strlen(opt->filename) + 15;
+		len = strlen(opt->path) + strlen(opt->filename_file) + 15;
 		MAKE_1ARRAY(outfile, len);
 		if ((err = errno))
 			goto FREE_AND_RETURN;
-		sprintf(outfile, "%s%s_mix_popq.popq", opt->path, opt->filename);
+		sprintf(outfile, "%s%s%s_mix_popq.popq", opt->path,
+			opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+			opt->filename_file);
 	}
 	
 	if ((fp = fopen(outfile, "w")) == NULL) {
@@ -691,9 +704,11 @@ int indivq_mix(options* opt, data* dat, model* mod)
 		MAKE_1ARRAY(outfile, len);
 		sprintf(outfile, "%s.mix.K=%d.indivq", opt->outfile_name, mod->K);
 	} else {
-		len = strlen(opt->path) + strlen(opt->filename) + 16 + (int) log10(mod->K);
+		len = strlen(opt->path) + strlen(opt->filename_file) + 16 + (int) log10(mod->K);
 		MAKE_1ARRAY(outfile, len);
-		sprintf(outfile, "%s%s.mix.K=%d.indivq", opt->path, opt->filename, mod->K);
+		sprintf(outfile, "%s%s%s.mix.K=%d.indivq", opt->path, 
+			opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+			opt->filename_file, mod->K);
 	}
 	if ((fp = fopen(outfile, "w")) == NULL) {
 		FREE_1ARRAY(outfile);

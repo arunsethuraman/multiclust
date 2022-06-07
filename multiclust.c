@@ -908,6 +908,7 @@ int make_options(options** opt)
 			MEMORY_ALLOCATION, "options object");
 
 	(*opt)->filename = NULL;
+	(*opt)->path = "./";
 	(*opt)->interleaved = 0;
 	(*opt)->missing_value = MISSING;
 	(*opt)->imputation_method = 0;
@@ -935,7 +936,6 @@ int make_options(options** opt)
 	(*opt)->lower_bound = 1e-8;
 	(*opt)->eta_lower_bound = 1e-8;
 	(*opt)->p_lower_bound = 1e-8;
-	(*opt)->path = "./";
 
 	/* run settings */
 	(*opt)->do_projection = 1;
@@ -1465,6 +1465,25 @@ int parse_options(options* opt, data* dat, int argc, const char** argv)
 					goto CMDLINE_ERROR;
 			} else {
 				opt->filename = argv[++i];
+				opt->filename_path = malloc(
+						strlen(opt->filename) + 1);
+				if (!opt->filename_path)
+					return mmessage(ERROR_MSG,
+						MEMORY_ALLOCATION,
+						"options::filename_path");
+				if (opt->filename[strlen(opt->filename)-1] == '\\')
+					return mmessage(ERROR_MSG,
+						INVALID_USER_SETUP, "Filename "
+						"'%s' provided to '-f' option "
+						"looks like the name of a "
+						"directory.\n", opt->filename);
+				strcpy(opt->filename_path, opt->filename);
+				for (int i = strlen(opt->filename) - 1; i; --i)
+					if (opt->filename[i] == '/') {
+						opt->filename_file = &opt->filename[i+1];
+						opt->filename_path[i+1] = 0;
+						break;
+					}
 			}
 			break;
 		case 'g':
