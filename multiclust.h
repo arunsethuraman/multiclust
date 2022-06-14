@@ -171,7 +171,7 @@ struct _options {
 	double abs_error;		/*!< absolute log like. error for convergence */
 	const char *filename;		/*!< data file name */
 	char *filename_path;		/*!< path portion of filename (parsed) */
-	char *filename_file;		/*!< file portion of filename (parsed) */
+	char const *filename_file;	/*!< file portion of filename (parsed) */
 	const char *path;		/*!< location of data files */
 	const char *admix_pfile;	/*!< name of admixture P file */
 	const char *admix_qfile;	/*!< name of admixture Q file */
