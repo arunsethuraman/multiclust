@@ -1827,7 +1827,7 @@ void fprint_usage(FILE* fp, const char* invocation_name, void* obj)
 		"\t--missing\n"
 		"\t\tInteger value that indicates missing (default: -9).\n"
 		"\t-M\t"
-		"Parallelization option\n"
+		"Parallelization option (in progress)\n"
 		"\t\t(default: no parallelization). \n"
 		"\t-n\t"
 		"Number of initializations to run EM to convergence\n"
