@@ -17,6 +17,11 @@
 
 #include "multiclust.h"
 
+//#define DEBUG
+#ifdef DEBUG
+int print_bits(size_t size, void *v);
+#endif
+
 double e_step_admixture_new(options *opt, data *dat, model *mod);
 double e_step_admixture_orig(options *opt, data *dat, model *mod);
 void m_step_admixture_new(options *opt, data *dat, model *mod);
@@ -26,6 +31,7 @@ void m_step_mixture(options *opt, data *dat, model *mod);
 double scale_log_sum(double *v, int n, double max_v);
 void internal_print_param(options *opt, data *dat, model *mod, double ***pklm, double **etaik, double *etak);
 int stop_condition(options *opt, model *mod, double loglik);
+
 
 #define e_step_admixture(A, B, C) e_step_admixture_orig(A, B, C)
 #define m_step_admixture(A, B, C) m_step_admixture_orig(A, B, C)
@@ -114,11 +120,20 @@ int stop(options *opt, model *mod, double loglik)
 	}
 
 
-	if (opt->verbosity > MINIMAL)
-		fprintf(stderr, "%4d (%s): %.2f (delta): %.5g\n",
-			mod->n_iter,
-			mod->accel_step?accel_method_abbreviations[opt->accel_scheme]:"EM",
+	if (opt->verbosity > MINIMAL) {
+		fprintf(stderr, "%4d (%s",
+			mod->n_iter, mod->accel_step
+				? accel_method_abbreviations[
+				opt->accel_scheme < NUM_ACCELERATION_METHODS
+					? opt->accel_scheme
+					: NUM_ACCELERATION_METHODS - 1]
+				: "EM");
+		if (mod->accel_step
+			&& opt->accel_scheme >= NUM_ACCELERATION_METHODS)
+			fprintf(stderr, "%d", opt->q);
+		fprintf(stderr, "): %.2f (delta): %.5g\n",
 			loglik, loglik - mod->logL);
+	}
 
 
 	mod->accel_step = 0;
@@ -167,9 +182,10 @@ int converged(options *opt, model *mod, double loglik)
 } /* converged */
 
 /**
- * One iteration of EM.  This function does one iteration of the EM algorithm
- * in place, meaning that the current parameter values are replaced with the
- * new ones in place, dicarding the old.
+ * One iteration of EM.  This function does one iteration of the EM algorithm,
+ * using previous parameter estimates in _model::findex and placing updated
+ * parameter estimates in _model::tindex, which is in place by default and
+ * if #define OLDWAY.
  *
  * @param opt options object
  * @param dat data object
@@ -179,6 +195,7 @@ int converged(options *opt, model *mod, double loglik)
 int em_step(options *opt, data *dat, model *mod)
 {
 	double ll;
+
 	if (opt->admixture) {
 		ll = e_step_admixture(opt, dat, mod);
 		m_step_admixture(opt, dat, mod);
@@ -285,8 +302,8 @@ double e_step_admixture_orig(options *opt, data *dat, model *mod)
 */
 
 	/* TIME COMPLEXITY (let T = A_1 + ... + A_L) */
-	/* current version: I*K*T*(2*K+3) \propt I*K^2*T */
-	/* faster version: I*K*L*M*(2*K + 2) */
+	/* current version: I*K*T*(2*K+3) \propto I*K^2*T */
+	/* faster version: I*K*L*M*(2*K + 2) \propto I*K^2*L*M and L*M>T*/
 	/* compare for full EM cycle):		current	vs. faster
 		5*I*K*T + 2*I*K^2*T + 2*I*K + 2*K*T	vs. 2*I*K^2*L*M + 4*I*K*L*M + 2*I*K + I*K*M + 2*K*T
 		5*I*K*T + 2*I*K^2*T			vs. 2*I*K^2*L*M + 4*I*K*L*M + I*K*M
@@ -318,13 +335,13 @@ double e_step_admixture_orig(options *opt, data *dat, model *mod)
 		for (l = 0; l < dat->L; l++) {
 			m_start = dat->L_alleles && dat->L_alleles[l][0] == MISSING;
 			for (m = m_start; m < dat->uniquealleles[l]; m++) {
-				if(dat->ILM[i][l][m] == 0) {
+				if (dat->ILM[i][l][m] == 0) {
 					for (k = 0; k < mod->K; k++)
 						mod->diklm[i][k][l][m] = 0;
 					continue;
 				}
 /*
-				max_ldilmk = -Inf;
+				max_ldilmk = -INFINITY;
 */
 				tmp = 0;
 				if (debug)
@@ -375,8 +392,7 @@ double e_step_admixture_orig(options *opt, data *dat, model *mod)
 						= dat->ILM[i][l][m]
 						* exp(ldilmk[k])/tmp;
 */
-				loglik += dat->ILM[i][l][m] * log(tmp)
-				;
+				loglik += dat->ILM[i][l][m] * log(tmp);
 /*
 				+ scale;
 */
@@ -579,8 +595,10 @@ void m_step_admixture_orig(options *opt, data *dat, model *mod)
 	int i, k, l, m, m_start;
 	double temp;
 
-	/* TIME COMPLEXITY: I*K*(2+T) + K*T*(I+2) */
-	/* FASTER VERSION: I*K*(2 + M) + K*(2*T + 2*L*M*I) */
+	/* TIME COMPLEXITY: 2*I*K*(1 + T)         + 2*K*T */
+	/* FASTER VERSION:  2*I*K*(1 + L*M + M/2) + 2*K*T */
+	/* T <= L*M with equality if same number of alleles per site */
+	/* M << T if L is large */
 
 	/* estimate new eta_k or eta_{ik} */
 	if (!opt->admixture || opt->eta_constrained) {
@@ -626,7 +644,8 @@ void m_step_admixture_orig(options *opt, data *dat, model *mod)
 		}
 		if (debug)
 			fprintf(stderr, "\n");
-		simplex_project_eta(mod, opt, 0);
+		if (opt->do_projection)
+			simplex_project_eta(mod, opt, 0);
 	} else {
 		for (i = 0; i < dat->I; i++) {
 			temp = 0.0;
@@ -678,7 +697,8 @@ void m_step_admixture_orig(options *opt, data *dat, model *mod)
 			}
 			if (debug & 1)
 				fprintf(stderr, "\n");
-			simplex_project_eta(mod, opt, i);
+			if (opt->do_projection)
+				simplex_project_eta(mod, opt, i);
 		}
 	}
 
@@ -726,11 +746,12 @@ void m_step_admixture_orig(options *opt, data *dat, model *mod)
 			}
 			if (debug & 2)
 				fprintf(stderr, "\n");
-			simplex_project_pklm(mod, dat, opt, k, l);
+			if (opt->do_projection)
+				simplex_project_pklm(mod, dat, opt, k, l);
 		}
 	}
 	//print_param(opt, dat, mod, mod->tindex);
-} /* End of m_step_admixture */
+} /* End of m_step_admixture_orig */
 	
 /**
  * E step for mixture model.
@@ -742,11 +763,11 @@ void m_step_admixture_orig(options *opt, data *dat, model *mod)
 double e_step_mixture(data *dat, model *mod)
 {
 	int i, l, m, k;
-	double log_etak[mod->K], temp_vik[mod->K];
+	double log_etak[mod->K];
 	double temp;
-	double scale, max_ll = -Inf;
-	double loglik = 0;
+	double max_ll, loglik = 0;
 
+	/* [KSD,SPEED] should store parameters on log scale! */
 	for (k = 0; k < mod->K; k++)
 #ifndef OLDWAY
 		log_etak[k] = log(mod->vetak[mod->findex][k]);
@@ -755,43 +776,128 @@ double e_step_mixture(data *dat, model *mod)
 #endif
 
 	for (i = 0; i < dat->I; i++) {
+		max_ll = -INFINITY;
+
 		/* numerators */
 		for (k = 0; k < mod->K; k++) {
-			temp_vik[k] = log_etak[k];
-			for (l = 0; l < dat->L; l++) {
-				for (m = dat->L_alleles && dat->L_alleles[l][0] == MISSING;
+			mod->vik[i][k] = log_etak[k];
+
+#ifdef DEBUG
+			if (!isfinite(mod->vik[i][k])) {
+				mmessage(DEBUG_MSG, NO_ERROR, "log(vik[%d,%d]) "
+					"is not finite after initialization!\n",
+									i, k);
+				exit(0);
+			}
+#endif
+			for (l = 0; l < dat->L; l++) {	/* loci */
+				for (m = dat->L_alleles	/* alleles */
+					&& dat->L_alleles[l][0] == MISSING;
 					m < dat->uniquealleles[l]; m++) {
-					if(dat->ILM[i][l][m] == 0)
+					if (dat->ILM[i][l][m] == 0 ||
+#ifndef OLDWAY
+						mod->vpklm[mod->findex][k][l][m] == 0.0
+#else
+						mod->pKLM[k][l][m] == 0.0
+#endif
+					)
 						continue;
-					temp_vik[k] += dat->ILM[i][l][m]
+					/* [KSD, SPEED] should store parameters on log scale */
+					mod->vik[i][k] += dat->ILM[i][l][m]
 #ifndef OLDWAY
 						* log(mod->vpklm[mod->findex][k][l][m]);
 #else
 						* log(mod->pKLM[k][l][m]);
 #endif
+
+#ifdef DEBUG
+					if (!isfinite(mod->vik[i][k])) {
+						mmessage(DEBUG_MSG, NO_ERROR,
+							"log(vik[%d, %d]) is "
+							"not finite after "
+							"locus %d, allele %d"
+							" (ILM=%d, pklm=%f)!\n",
+							i, k, l, m,
+							dat->ILM[i][l][m],
+							mod->vpklm[mod->findex][k][l][m]);
+						exit(0);
+					}
+#endif
 				}
 			}
-			if (temp_vik[k] > max_ll)
-				max_ll = temp_vik[k];
+			if (mod->vik[i][k] > max_ll)
+				max_ll = mod->vik[i][k];
 		}
 
 		/* normalize (possibly scaling) */
-		scale = scale_log_sum(temp_vik, mod->K, max_ll);
+/*
+		double scale = scale_log_sum(mod->vik[i], mod->K, max_ll);
+ */
 		temp = 0;
+		for(k = 0; k < mod->K; k++) {
+
+#ifdef DEBUG
+			fprintf(stderr, "i=%d, k=%d: (vik=%f; %d %d)", i, k,
+					mod->vik[i][k], isnan(mod->vik[i][k]),
+					mod->vik[i][k] == mod->vik[i][k]);
+#endif
+
+			mod->vik[i][k] = exp(mod->vik[i][k] - max_ll);
+			temp += mod->vik[i][k];
+
+#ifdef DEBUG
+			fprintf(stderr, " (vik=%e; %d %d) (temp=%e; %d) "
+					"(max_ll=%f; %d)\n", mod->vik[i][k],
+							isnan(mod->vik[i][k]),
+					mod->vik[i][k] == mod->vik[i][k],
+				temp, isnan(temp), max_ll, isnan(max_ll));
+			fprintf(stderr, "mod->vik[%d][%d]: ", i, k);
+			if (print_bits(sizeof(mod->vik[i][k]),
+						(void *) &mod->vik[i][k]))
+				exit(0);
+			fprintf(stderr, "temp: ");
+			if (print_bits(sizeof(temp), (void *) &temp))
+				exit(0);
+			fprintf(stderr, "max_ll: ");
+			if (print_bits(sizeof(max_ll), (void *) &max_ll))
+				exit(0);
+			if (isnan(temp) || isnan(mod->vik[i][k])
+							|| isnan(max_ll))
+				exit(0);
+#endif
+		}
+
+#ifdef DEBUG
+		if (isnan(temp) || temp == 0.0) {
+			mmessage(DEBUG_MSG, NO_ERROR, "temp is not finite for "
+							"individual %d!\n", i);
+			exit(0);
+		}
+#endif
+
 		for(k = 0; k < mod->K; k++)
-			temp += exp(temp_vik[k]);
-		for(k = 0; k < mod->K; k++)
-			mod->vik[i][k] = exp(temp_vik[k])/temp;
+			mod->vik[i][k] /= temp;
 
 		/* restore scaling to log likelihood */
-		loglik += log(temp) + scale;
+		loglik += log(temp) + max_ll;
+
+#ifdef DEBUG
+		fprintf(stderr, "%d: %f + %f = %f\n", i, log(temp), max_ll,
+									loglik);
+		if (isnan(loglik)) {
+			mmessage(DEBUG_MSG, NO_ERROR, "loglik is not finite "
+				"for individual %d (temp=%e, max_ll=%f)!\n", i,
+								temp, max_ll);
+			exit(0);
+		}
+#endif
 	}
 
 	return loglik;
 } /* End of e_step_mixture(). */
 
 /**
- * M step for admixture model, without accounting for missing data.
+ * M step for mixture model, without accounting for missing data.
  *
  * @param opt options object
  * @param dat data object
@@ -802,6 +908,9 @@ void m_step_mixture(options *opt, data *dat, model *mod)
 {
 	int i, l, m, k, m_start;
 	double temp;
+#ifdef DEBUG
+	double maxl = -INFINITY;
+#endif
 
 	/* estimate eta */
 	temp = 0.0;
@@ -811,25 +920,46 @@ void m_step_mixture(options *opt, data *dat, model *mod)
 #else
 		mod->etak[k] = 0;//opt->eta_lower_bound;
 #endif
-		for (i = 0; i < dat->I; i++)
+		/* [KSD, SPEED] likely more cache misses, swap loops */
+		for (i = 0; i < dat->I; i++) {
 #ifndef OLDWAY
 			mod->vetak[mod->tindex][k] += mod->vik[i][k];
 #else
 			mod->etak[k] += mod->vik[i][k];
 #endif
+		}
 #ifndef OLDWAY
 		temp += mod->vetak[mod->tindex][k];
+#	ifdef DEBUG
+		if (maxl < mod->vetak[mod->tindex][k])
+			maxl = mod->vetak[mod->tindex][k];
+#	endif
 #else
 		temp += mod->etak[k];
+#	ifdef DEBUG
+		if (maxl < mod->etak[k])
+			maxl = mod->etak[k];
+#	endif
+#endif
+#ifdef DEBUG
+		if (isnan(temp)) {
+			mmessage(DEBUG_MSG, NO_ERROR, "m_step_mixture, computing eta[%d]: temp=%f\n", k, temp);
+			exit(0);
+		}
 #endif
 	}
-	for (k = 0; k < mod->K; k++)
+	for (k = 0; k < mod->K; k++) {
 #ifndef OLDWAY
 		mod->vetak[mod->tindex][k] /= temp;
+#ifdef DEBUG
+		fprintf(stderr, "mod->vetak[%d][%d] = %e (temp = %e; maxl = %e)\n", mod->tindex, k, mod->vetak[mod->tindex][k], temp, maxl);
+#endif
 #else
 		mod->etak[k] /= temp;
 #endif
-	simplex_project_eta(mod, opt, 0);
+	}
+	if (opt->do_projection)
+		simplex_project_eta(mod, opt, 0);
 
 	/* estimate p_{klm} */
 	for (k = 0; k < mod->K; k++)
@@ -839,24 +969,34 @@ void m_step_mixture(options *opt, data *dat, model *mod)
 			temp = 0.0;
 			for (m = m_start; m < dat->uniquealleles[l]; m++) {
 #ifndef OLDWAY
-				mod->vpklm[mod->tindex][k][l][m] = 0;//opt->p_lower_bound;
+				mod->vpklm[mod->tindex][k][l][m] = opt->p_lower_bound;
 #else
-				mod->pKLM[k][l][m] = 0;//opt->p_lower_bound;
+				mod->pKLM[k][l][m] = opt->p_lower_bound;
 #endif
+				/* [KSD, SPEED] cache miss likely */
 				for (i = 0; i < dat->I; i++) {
-					if(dat->ILM[i][l][m])
+					if (dat->ILM[i][l][m])
 #ifndef OLDWAY
-						mod->vpklm[mod->tindex][k][l][m] +=
+						mod->vpklm[mod->tindex][k][l][m]
 #else
-						mod->pKLM[k][l][m] +=
+						mod->pKLM[k][l][m]
 #endif
-							mod->vik[i][k]
+							+= mod->vik[i][k]
 							* dat->ILM[i][l][m];
 				}
 #ifndef OLDWAY
 				temp += mod->vpklm[mod->tindex][k][l][m];
 #else
 				temp += mod->pKLM[k][l][m];
+#endif
+#ifdef DEBUG
+				if (isnan(temp)) {
+					mmessage(DEBUG_MSG, NO_ERROR,
+						"m_step_mixture, compute "
+						"pklm[%d][%d][%d]: temp=%f\n",
+								k, l, m, temp);
+					exit(0);
+				}
 #endif
 			}
 			for (m = m_start; m < dat->uniquealleles[l]; m++)
@@ -865,7 +1005,8 @@ void m_step_mixture(options *opt, data *dat, model *mod)
 #else
 				mod->pKLM[k][l][m] /= temp;
 #endif
-			simplex_project_pklm(mod, dat, opt, k, l);
+			if (opt->do_projection)
+				simplex_project_pklm(mod, dat, opt, k, l);
 		}
 } /* End of m_step_mixture(). */
 
@@ -920,6 +1061,8 @@ double scale_log_sum(double *v, int n, double max_v)
  * require storage of previous three iterations or two sets of differences.
  * This function takes these steps and stores the parameters/differences.
  *
+ * In the process of updating...
+ *
  * @param mod model object
  * @param dat data object 
  * @param opt options object
@@ -928,31 +1071,52 @@ double scale_log_sum(double *v, int n, double max_v)
  */
 int em_2_steps(model *mod, data *dat, options *opt)
 {
+#ifdef DEBUG
 	int debug = 0;
+#endif
 
 #ifndef OLDWAY
 	int i, k, l, m, j;
 
-	if (debug>1) print_param(opt, dat, mod, mod->pindex);
-	if (debug) fprintf(stderr, "%s: filling %d\n", __func__, mod->delta_index);
+#ifdef DEBUG
+	if (debug > 1)
+		print_param(opt, dat, mod, mod->pindex);
+	if (debug)
+		fprintf(stderr, "%s: filling %d\n", __func__, mod->delta_index);
+#endif
 
 	/* the playground where we take the iterates */
 	mod->findex = mod->pindex;
 	mod->tindex = (mod->findex + 1) % 3;
 
+#ifdef NEWWAY
+	for (j = 0; j < 1; j++) {
+#else
 	for (j = 0; j < 2; j++) {
+#endif
+		/* read _model::findex, update _model::tindex */
 		if (em_step(opt, dat, mod))
 			return 1;
-		if (debug>1) print_param(opt, dat, mod, mod->tindex);
+#ifdef DEBUG
+		if (debug > 1)
+			print_param(opt, dat, mod, mod->tindex);
+#endif
 		for (k = 0; k < mod->K; k++)
 			for (l = 0; l < dat->L; l++) {
 				for (m = dat->L_alleles && dat->L_alleles[l][0] == MISSING;
 					m < dat->uniquealleles[l]; m++) {
+#ifndef NEWWAY
 					if (!j)
 						mod->u_pklm[mod->delta_index][k][l][m]
 							= mod->vpklm[mod->tindex][k][l][m]
 							- mod->vpklm[mod->findex][k][l][m];
+#else
+						mod->u_pklm[mod->delta_index][k][l][m]
+							= mod->v_pklm[mod->delta_index][k][l][m];
+#endif
+#ifndef NEWWAY
 					else
+#endif
 						mod->v_pklm[mod->delta_index][k][l][m]
 							= mod->vpklm[mod->tindex][k][l][m]
 							- mod->vpklm[mod->findex][k][l][m];
@@ -961,22 +1125,36 @@ int em_2_steps(model *mod, data *dat, options *opt)
 		if (opt->admixture && !opt->eta_constrained)
 			for (i = 0; i < dat->I; i++)
 				for (k = 0; k < mod->K; k++) {
+#ifndef NEWWAY
 					if (!j)
 						mod->u_etaik[mod->delta_index][i][k]
 							= mod->vetaik[mod->tindex][i][k]
 							- mod->vetaik[mod->findex][i][k];
+#else
+						mod->u_etaik[mod->delta_index][i][k]
+							= mod->v_etaik[mod->delta_index][i][k];
+#endif
+#ifndef NEWWAY
 					else
+#endif
 						mod->v_etaik[mod->delta_index][i][k]
 							= mod->vetaik[mod->tindex][i][k]
 							- mod->vetaik[mod->findex][i][k];
 				}
 		else
 			for (k = 0; k < mod->K; k++) {
+#ifndef NEWWAY
 				if (!j)
 					mod->u_etak[mod->delta_index][k]
 						= mod->vetak[mod->tindex][k]
 						- mod->vetak[mod->findex][k];
+#else
+					mod->u_etak[mod->delta_index][k]
+						= mod->v_etak[mod->delta_index][k];
+#endif
+#ifndef NEWWAY
 				else
+#endif
 					mod->v_etak[mod->delta_index][k]
 						= mod->vetak[mod->tindex][k]
 						- mod->vetak[mod->findex][k];
@@ -1007,10 +1185,12 @@ int em_2_steps(model *mod, data *dat, options *opt)
 	else
 		COPY_1ARRAY(mod->iter1_etak, mod->etak, mod->K);
 	
+#ifdef DEBUG
 	if (debug>1) {
 		print_param(opt, dat, mod, 1);
 		print_param(opt, dat, mod, 2);
 	}
+#endif
 
 	if (em_step(opt, dat, mod))
 		return 1;
@@ -1021,8 +1201,10 @@ int em_2_steps(model *mod, data *dat, options *opt)
 	else
 		COPY_1ARRAY(mod->iter2_etak, mod->etak, mod->K);
 
+#ifdef DEBUG
 	if (debug)
 		print_param(opt, dat, mod, 3);
+#endif
 
 #endif
 	return 0;
@@ -1208,3 +1390,28 @@ void internal_print_param(options *opt, data *dat, model *mod, double ***pklm, d
 			fprintf(stderr, "\n");
 		}
 } /* internal_print_param */
+
+#ifdef DEBUG
+int print_bits(size_t size, void *v)
+{
+        char *cv = (char *) v;
+	int is_nan = 1;
+
+        for (size_t i = size - 1; ; --i) {
+                for (int j = 7; j >= 0; --j) {
+                        printf("%d", cv[i] >> j & 1);
+			if (i == size - 1 && !(cv[i] >> j & 1))
+				is_nan = 0;
+			else if (i == size - 2 && j == 7 && !(cv[i] >> j & 1))
+				is_nan = 0;
+		}
+                if (i)
+                        printf(" ");
+		else
+			break;
+        }
+        printf("\n");
+
+	return is_nan;
+} /* print_bits */
+#endif

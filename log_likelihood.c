@@ -7,6 +7,8 @@
  * This file contains functions that compute the log likelihood.
  */
 
+#include <math.h>
+
 #include "multiclust.h"
 #define MAKE_1ARRAY MAKE_1ARRAY_RETURN /* return on memory allocation error */
 
@@ -95,7 +97,7 @@ double logL_admixture(options *opt, data *dat, model *mod, int which)
 {
 	int i, k, l, m, m_start;
 	double temp = 0.0, loglt1 = 0.0;
-	double ***pKLM, **etaik, *etak;
+	double ***pKLM = NULL, **etaik = NULL, *etak = NULL;
 
 #ifndef OLDWAY
 	pKLM = mod->vpklm[which];
@@ -183,7 +185,7 @@ double logL_mixture(data *dat, model *mod, int which)
 		log_etak[k] = log(etak[k]);
 	
 	for (i = 0; i < dat->I; i++) {
-		max_exp = -Inf;
+		max_exp = -INFINITY;
 		for (k = 0; k < mod->K; k++) {
 			temp_vik[k] = 0.0;
 			for (l = 0; l < dat->L; l++) {

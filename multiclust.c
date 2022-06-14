@@ -14,45 +14,47 @@
  *        current best log likelihood has been observed X times
  */
 
+#include <math.h>
 
 #include "cline.h"	/* command line */
 #include "multiclust.h"
 #define MAKE_1ARRAY MAKE_1ARRAY_RETURN
 
-/* create structures for options, data, and model */
-int make_options(options **opt);
-int make_data(data **dat);
-int make_model(model **);
+ /* create structures for options, data, and model */
+int make_options(options** opt);
+int make_data(data** dat);
+int make_model(model**);
 
 /* set/parse options and model; verify integrity */
-int parse_options(options *opt, data *dat, int argc, const char **argv);
-int allocate_model_for_k(options *opt, model *mod, data *dat);
-int synchronize(options *opt, data *dat, model *mod);
+int parse_options(options* opt, data* dat, int argc, const char** argv);
+int allocate_model_for_k(options* opt, model* mod, data* dat);
+int synchronize(options* opt, data* dat, model* mod);
+int simulate_data(data *dat, options *opt, model *mod);
 
 /* do the data fitting or bootstrap */
-int timed_model_estimation(options *, data *, model *);
-int estimate_model(options *opt, data *dat, model *mod, int bootstrap);
-int maximize_likelihood(options *opt, data *dat, model *mod, int bootstrap);
-int run_bootstrap(options *opt, data *dat, model *mod);
-void print_model_state(options *opt, data *dat, model *mod, int diff, int newline);
-double adj_rand(int n, int k1, int k2, int *cl1, int *cl2, int type);
+int timed_model_estimation(options*, data*, model*);
+int estimate_model(options* opt, data* dat, model* mod, int bootstrap);
+int maximize_likelihood(options* opt, data* dat, model* mod, int bootstrap);
+int run_bootstrap(options* opt, data* dat, model* mod);
+void print_model_state(options* opt, data* dat, model* mod, int diff, int newline);
+double adj_rand(int n, int k1, int k2, int* cl1, int* cl2, int type);
 
 /* cleanup all allocated memory */
-void free_options(options *opt);
-void free_data(data *dat);
-void free_model(model *mod, options *opt);
-void free_model_mles(model *mod);
-void free_model_data(model *mod, options *opt);
+void free_options(options* opt);
+void free_data(data* dat);
+void free_model(model* mod, options* opt);
+void free_model_mles(model* mod);
+void free_model_data(model* mod, options* opt);
 
-const char *accel_method_abbreviations[NUM_ACCELERATION_METHODS] = {
-        "EM",
+const char* accel_method_abbreviations[NUM_ACCELERATION_METHODS] = {
+	"EM",
 	"S1",
 	"S2",
 	"S3",
 	"Q",
 };
-const char *accel_method_names[NUM_ACCELERATION_METHODS] = {
-	"No acceration",
+const char* accel_method_names[NUM_ACCELERATION_METHODS] = {
+	"No acceleration",
 	"SQUAREM version 1",
 	"SQUAREM version 2",
 	"SQUAREM version 3",
@@ -62,11 +64,11 @@ const char *accel_method_names[NUM_ACCELERATION_METHODS] = {
 
 
 
-int main(int argc, const char **argv)
+int main(int argc, const char** argv)
 {
-	options *opt = NULL;	/* run options */
-	data *dat = NULL;	/* genetic data */
-	model *mod = NULL;	/* model parameters */
+	options* opt = NULL;	/* run options */
+	data* dat = NULL;	/* genetic data */
+	model* mod = NULL;	/* model parameters */
 	int err = NO_ERROR;	/* error code */
 
 /*
@@ -77,7 +79,7 @@ int main(int argc, const char **argv)
 */
 
 #ifdef OLDWAY
-fprintf(stdout, "Using OLDWAY code\n");
+	fprintf(stdout, "Using OLDWAY code\n");
 #endif
 
 	/* make various structures to store run information */
@@ -96,19 +98,51 @@ fprintf(stdout, "Using OLDWAY code\n");
 	if ((err = parse_options(opt, dat, argc, argv)))
 		goto FREE_AND_EXIT;
 
-	/* read data */
-	if ((err = read_file(opt, dat)))
+	if (opt->simulate) {
+
+		if ((err = read_admixture_qfile(dat, mod, opt->admix_qfile)))
+			goto FREE_AND_EXIT;
+		
+		if ((err = read_admixture_pfile(dat, mod, opt->admix_pfile)))
+			goto FREE_AND_EXIT;
+
+		if ((err = simulate_data(dat, opt, mod)))
+			goto FREE_AND_EXIT;
+
+		if ((err = write_data(opt, dat, opt->simulate_outfile, 0)))
+			goto FREE_AND_EXIT;
+		
+		// force exit, as we are not set up to run yet if (!opt->n_init)
 		goto FREE_AND_EXIT;
+	} else {
+
+		/* read data */
+		if ((err = read_file(opt, dat)))
+			goto FREE_AND_EXIT;
+	
+		if (opt->verbosity >= TALKATIVE)
+			mmessage(INFO_MSG, NO_ERROR, "Finished reading data: %u "
+				"%u-ploid individuals at %u loci.\n", dat->I,
+							dat->ploidy, dat->L);
+	}
 
 	/* finalize settings that refer to data; check settings */
 	if ((err = synchronize(opt, dat, mod)))
 		goto FREE_AND_EXIT;
+
+	if (opt->verbosity >= TALKATIVE)
+		mmessage(INFO_MSG, NO_ERROR, "Finished checking settings: using"
+			" %s.\n", opt->accel_name);
 
 	/* estimate the model(s) using the observed data */
 	if (opt->n_repeat > 1 && (err = timed_model_estimation(opt, dat, mod)))
 		goto FREE_AND_EXIT;
 	if (opt->n_repeat == 1 && (err = estimate_model(opt, dat, mod, 0)))
 		goto FREE_AND_EXIT;
+
+	/* set up parallelization mode */
+	if (opt->parallel)
+		printf("%f\n", mod->max_logL);
 
 	/* optionally run a bootstrap */
 	if (opt->n_bootstrap) {
@@ -122,13 +156,34 @@ fprintf(stdout, "Using OLDWAY code\n");
 
 FREE_AND_EXIT:
 
-	free_model(mod,opt);
+	free_model(mod, opt);
 	free_options(opt);
 	free_data(dat);
 
 	return err;
 
 } /* main */
+
+int simulate_data(data *dat, options *opt, model *mod)
+{
+	MAKE_2ARRAY(dat->IL, dat->I * dat->ploidy, dat->L);
+	MAKE_1ARRAY(dat->I_K, dat->I);
+
+	if (opt->admixture)
+		MAKE_2ARRAY(dat->IL_K, dat->I * dat->ploidy, dat->L);
+
+	for (int i = 0; i < dat->I; i += dat->ploidy)
+		for (int j = 0; j < dat->ploidy; ++j)
+			for (int l = 0; l < dat->L; ++l) {
+				dat->IL_K[i + j][l] = (int) (rand() % mod->K);	/* [KSD,TODO] This is not uniform unless RAND_MAX % mod->K == 0. */
+				if (rand() / (RAND_MAX + 1.) < mod->vpklm[0][dat->IL_K[i + j][l]][l][0])
+					dat->IL[i + j][l] = 0;
+				else
+					dat->IL[i + j][l] = 1;
+			}
+
+	return NO_ERROR;
+} /* simulate_data */
 
 /**
  * Time model estimation by repeating multiple times.  Repeat model-fitting
@@ -143,7 +198,7 @@ FREE_AND_EXIT:
  * @param mod model object
  * @return error status
  */
-int timed_model_estimation(options *opt, data *dat, model *mod)
+int timed_model_estimation(options* opt, data* dat, model* mod)
 {
 	int err = NO_ERROR;
 	clock_t start;
@@ -163,10 +218,10 @@ int timed_model_estimation(options *opt, data *dat, model *mod)
 	double sum_ll2 = 0;
 	double sum_ar = 0;
 	double sum_ar2 = 0;
-	double max_ll = -Inf;
+	double max_ll = -INFINITY;
 	double min_aic = 0, min_bic = 0;
 	double max_ar = -1;
-	double first_ll = -Inf;
+	double first_ll = -INFINITY;
 	double max_ll_rand = 0;
 	int first_hit_index = 0;
 	int converged_repeats = 0;
@@ -216,11 +271,11 @@ int timed_model_estimation(options *opt, data *dat, model *mod)
 		if (mod->n_targetll_times)
 			target_reached++;
 
-		esec = ((double) clock() - start) / CLOCKS_PER_SEC;
+		esec = ((double)clock() - start) / CLOCKS_PER_SEC;
 		if (opt->verbosity > SILENT) {
 			print_model_state(opt, dat, mod,
-				((double) clock() - start)/CLOCKS_PER_SEC, 0);
-			fprintf(stdout, " %f %f %d %d", esec, esec/n_repeats,
+				((double)clock() - start) / CLOCKS_PER_SEC, 0);
+			fprintf(stdout, " %f %f %d %d", esec, esec / n_repeats,
 				target_reached, converged_repeats);
 			fprintf(stdout, " %f", max_ll);
 			if (opt->target_ll)
@@ -246,7 +301,7 @@ int timed_model_estimation(options *opt, data *dat, model *mod)
 		fprintf(stdout, "Data, Method, Model: %s, %s, %s\n", opt->filename,
 			opt->accel_abbreviation,
 			opt->admixture && opt->eta_constrained
-			?"admix constrained":opt->admixture?"admix":"mix");
+			? "admix constrained" : opt->admixture ? "admix" : "mix");
 		fprintf(stdout, "Run: %e %e %e %e n=%d i=%d u=(%f,%d) w=(%d,%d)\n",
 			opt->abs_error, opt->rel_error, opt->eta_lower_bound,
 			opt->p_lower_bound, opt->n_init, opt->n_init_iter, opt->desired_ll,
@@ -254,32 +309,33 @@ int timed_model_estimation(options *opt, data *dat, model *mod)
 		fprintf(stdout, "Number of repetitions: %d of %d requested, %d converged, %d reach target\n",
 			n_repeats, opt->n_repeat, converged_repeats, target_reached);
 		fprintf(stdout, "Average time: %fs (total: %fs; target: %d)\n",
-			esec/n_repeats, esec, opt->repeat_seconds);
+			esec / n_repeats, esec, opt->repeat_seconds);
 		fprintf(stdout, "Average log likelihood: %f (+/- %f)\n",
-			sum_ll/n_repeats, sqrt((sum_ll2 - sum_ll*sum_ll/n_repeats)
-			/(n_repeats-1)));
+			sum_ll / n_repeats, sqrt((sum_ll2 - sum_ll * sum_ll / n_repeats)
+				/ (n_repeats - 1)));
 		fprintf(stdout, "Maximum log likelihood: %f first hit at run %d (AIC %f; BIC %f; RAND: %f)\n",
 			max_ll, first_hit_index, min_aic, min_bic, max_ll_rand);
 		fprintf(stdout, "Adjusted RAND: avg = %f +/- %f; max = %f\n",
-			sum_ar/n_repeats, sqrt((sum_ar2 - sum_ar*sum_ar/n_repeats)
-			/(n_repeats-1)), max_ar);
+			sum_ar / n_repeats, sqrt((sum_ar2 - sum_ar * sum_ar / n_repeats)
+				/ (n_repeats - 1)), max_ar);
 		if (opt->max_K != opt->min_K) {
 			fprintf(stdout, "Average K (AIC): %f (+/- %f)\n",
-				sum_aic_K/n_repeats, sqrt((sum_aic_K2 -
-				sum_aic_K*sum_aic_K/n_repeats)/(n_repeats - 1)));
+				sum_aic_K / n_repeats, sqrt((sum_aic_K2 -
+					sum_aic_K * sum_aic_K / n_repeats) / (n_repeats - 1)));
 			fprintf(stdout, "Average K (BIC): %f (+/- %f)\n",
-				sum_bic_K/n_repeats, sqrt((sum_bic_K2 - sum_bic_K
-				* sum_bic_K / n_repeats)/(n_repeats - 1)));
-		} else {
+				sum_bic_K / n_repeats, sqrt((sum_bic_K2 - sum_bic_K
+					* sum_bic_K / n_repeats) / (n_repeats - 1)));
+		}
+		else {
 			fprintf(stdout, "Total initializations, iterations: %d, %d\n",
 				(int)sum_init, (int)sum_iter);
 			fprintf(stdout, "Average initializations: %f (+/- %f)"
-				" [%e, %e]\n", sum_init/n_repeats, sqrt((sum_init2
-				- sum_init*sum_init/n_repeats)/(n_repeats - 1)),
+				" [%e, %e]\n", sum_init / n_repeats, sqrt((sum_init2
+					- sum_init * sum_init / n_repeats) / (n_repeats - 1)),
 				sum_init2, sum_init);
 			fprintf(stdout, "Average iterations: %f (+/- %f) [%e %e]\n",
-				sum_iter/sum_init, sqrt((sum_iter2 - sum_iter
-				* sum_iter/sum_init)/(sum_init - 1)),
+				sum_iter / sum_init, sqrt((sum_iter2 - sum_iter
+					* sum_iter / sum_init) / (sum_init - 1)),
 				sum_iter2, sum_iter);
 			fprintf(stdout, "Maximum initializations: %d\n",
 				max_init);
@@ -306,7 +362,7 @@ int timed_model_estimation(options *opt, data *dat, model *mod)
  * @param bootstrap indicate if bootstrap run
  * @return error status
  */
-int estimate_model(options *opt, data *dat, model *mod, int bootstrap)
+int estimate_model(options* opt, data* dat, model* mod, int bootstrap)
 {
 	int total_iter = 0;
 	int err = NO_ERROR;
@@ -318,11 +374,11 @@ int estimate_model(options *opt, data *dat, model *mod, int bootstrap)
 	/* initialize: if bootstrap, comparing H0: K = mod->null_K vs.
 	 * Ha: K = mod->alt_K; otherwise running for 1, 2, ..., opt->max_K
 	 * so log likelihood will increase as progress through models */
-	mod->max_logL = -Inf;
-	mod->max_logL_H0 = -Inf;
+	mod->max_logL = -INFINITY;
+	mod->max_logL_H0 = -INFINITY;
 	mod->K = opt->n_bootstrap ? mod->null_K : opt->min_K;
 	dat->max_M = dat->M;
-	min_aic = min_bic = Inf;
+	min_aic = min_bic = INFINITY;
 
 	//if(opt->block_relax == 1)
 	//	mod->K = 2;
@@ -344,9 +400,10 @@ int estimate_model(options *opt, data *dat, model *mod, int bootstrap)
 		/* final output for this model */
 		if (opt->n_repeat == 1 && opt->verbosity) /* || opt->verbosity > SILENT) */
 			print_model_state(opt, dat, mod,
-				((double) clock() - start)/CLOCKS_PER_SEC, 1);
+				((double)clock() - start) / CLOCKS_PER_SEC, 1);
 
 		total_iter += mod->n_total_iter;
+
 
 		/* possibly store maximum likelihood under H0 */
 		if (opt->n_bootstrap && mod->K == mod->null_K)
@@ -411,14 +468,14 @@ int estimate_model(options *opt, data *dat, model *mod, int bootstrap)
  * @param bootstrap is this a bootstrap run
  * @return error status
  */
-int maximize_likelihood(options *opt, data *dat, model *mod, int bootstrap)
+int maximize_likelihood(options* opt, data* dat, model* mod, int bootstrap)
 {
 	int i;
 	int err = NO_ERROR;
 
 
 	/* resetting statistics recorded across multiple initializations */
-        mod->first_max_logL = -Inf;
+	mod->first_max_logL = -INFINITY;
 	mod->n_init = 0;
 	mod->n_total_iter = 0;
 	mod->n_maxll_times = 0;
@@ -429,15 +486,13 @@ int maximize_likelihood(options *opt, data *dat, model *mod, int bootstrap)
 	mod->ever_converged = 0;
 
 	mod->start = clock();
-	for (i=0; opt->target_revisit || opt->target_ll		/* targeting */
-		|| opt->n_seconds || i<opt->n_init; i++) {	/* timing */
-		mod->current_i = 0;
-		mod->current_l = 0;
-		mod->current_k = 0;
+
+/* Madeline's simpler version */
+if (opt->test_run){
+	for (i = 0; opt->target_revisit || opt->target_ll	/* targeting */
+		|| opt->n_seconds || i < opt->n_init; i++) {	/* timing */
 		mod->logL = 0.0;
 		mod->converged = 0;
-		mod->stopped = 0;
-		mod->iter_stop = 0;
 
 		/* initialize parameters */
 		if ((err = initialize_model(opt, dat, mod)))
@@ -450,55 +505,86 @@ int maximize_likelihood(options *opt, data *dat, model *mod, int bootstrap)
 		if (mod->converged)
 			mod->ever_converged = 1;
 
-		/* add iter/init statistics if converged or timed out */
-		if (mod->converged || (!mod->n_init && mod->time_stop)) {
-			mod->n_total_iter += mod->n_iter;
-			if (mod->n_max_iter < mod->n_iter)
-				mod->n_max_iter = mod->n_iter;
-			mod->n_init++;
-		}
-
-		/* solution already seen (up to convergence precision) */
-		if (mod->converged && converged(opt, mod, mod->first_max_logL)) {
-			mod->n_maxll_times++;
-		/* first occurrence of better solution */
-		} else if (mod->converged && mod->logL > mod->first_max_logL) {
-			mod->n_maxll_times = 1;
-			mod->first_max_logL = mod->logL;
-			mod->n_maxll_init = mod->n_init;
-		}
-
 		/* record any better solution than previously seen */
 		if (mod->logL > mod->max_logL) {
 			mod->max_logL = mod->logL;
 			mod->aic = aic(mod);
 			mod->bic = bic(dat, mod);
+		}
+	}
+} else {
+	for (i = 0; opt->target_revisit || opt->target_ll	/* targeting */
+		|| opt->n_seconds || i < opt->n_init; i++) {	/* timing */
+		 mod->current_i = 0;
+		 mod->current_l = 0;
+		 mod->current_k = 0;
+		 mod->logL = 0.0;
+		 mod->converged = 0;
+		 mod->stopped = 0;
+		 mod->iter_stop = 0;
 
-			/* save mles if not bootstrap run and this is H0 */
-			if (!bootstrap && opt->n_bootstrap && mod->K == mod->null_K) {
+		 /* initialize parameters */
+		 if ((err = initialize_model(opt, dat, mod)))
+			 return err;
+	
+		 /* maximize likelihood */
+		 em(opt, dat, mod);
+		 /* !_model::converged b/c _model::iter_stop || _model::time_stop */
+	
+		 if (mod->converged)
+			 mod->ever_converged = 1;
+	
+		 /* add iter/init statistics if converged or timed out */
+		 if (mod->converged || (!mod->n_init && mod->time_stop)) {
+			 mod->n_total_iter += mod->n_iter;
+			 if (mod->n_max_iter < mod->n_iter)
+				 mod->n_max_iter = mod->n_iter;
+			 mod->n_init++;
+		 }
+	
+		 /* solution already seen (up to convergence precision) */
+		 if (mod->converged && converged(opt, mod, mod->first_max_logL)) {
+			 mod->n_maxll_times++;
+			 /* first occurrence of better solution */
+		 }
+		 else if (mod->converged && mod->logL > mod->first_max_logL) {
+			 mod->n_maxll_times = 1;
+			 mod->first_max_logL = mod->logL;
+			 mod->n_maxll_init = mod->n_init;
+		 }
+	
+		 /* record any better solution than previously seen */
+		 if (mod->logL > mod->max_logL) {
+			 mod->max_logL = mod->logL;
+			 mod->aic = aic(mod);
+			 mod->bic = bic(dat, mod);
+	
+			 /* save mles if not bootstrap run and this is H0 */
+			 if (!bootstrap && opt->n_bootstrap && mod->K == mod->null_K) {
 #ifndef OLDWAY
-				COPY_3JAGGED_ARRAY(mod->mle_pKLM, mod->vpklm[mod->pindex], dat->uniquealleles);
+				 COPY_3JAGGED_ARRAY(mod->mle_pKLM, mod->vpklm[mod->pindex], dat->uniquealleles);
 #else
-				COPY_3JAGGED_ARRAY(mod->mle_pKLM, mod->pKLM, dat->uniquealleles);
+				 COPY_3JAGGED_ARRAY(mod->mle_pKLM, mod->pKLM, dat->uniquealleles);
 #endif
-				if (!opt->admixture || opt->eta_constrained)
+				 if (!opt->admixture || opt->eta_constrained)
 #ifndef OLDWAY
-					COPY_1ARRAY(mod->mle_etak, mod->vetak[mod->pindex], mod->K);
+					 COPY_1ARRAY(mod->mle_etak, mod->vetak[mod->pindex], mod->K);
 #else
-					COPY_1ARRAY(mod->mle_etak, mod->etak, mod->K);
+					 COPY_1ARRAY(mod->mle_etak, mod->etak, mod->K);
 #endif
-				else
+				 else
 #ifndef OLDWAY
-					COPY_2ARRAY(mod->mle_etaik, mod->vetaik[mod->pindex], mod->K);
+					 COPY_2ARRAY(mod->mle_etaik, mod->vetaik[mod->pindex], mod->K);
 #else
-					COPY_2ARRAY(mod->mle_etaik, mod->etaik, mod->K);
+					 COPY_2ARRAY(mod->mle_etaik, mod->etaik, mod->K);
 #endif
 			}
 
 			/* write results to file if not bootstrap run */
 			if (!bootstrap && opt->write_files) {
 				/* TODO [KSD]: overwriting potentially many
-				 * times for big data is bad */
+				 * times for big data bad, but convenient!
+				 */
 				if (opt->admixture) {
 					partition_admixture(dat, mod);
 					write_file_detail(opt, dat, mod);
@@ -526,19 +612,19 @@ int maximize_likelihood(options *opt, data *dat, model *mod, int bootstrap)
 			}
 		}
 
-//print_param(opt, dat, mod, mod->tindex);
+		//print_param(opt, dat, mod, mod->tindex);
 
 		/* output information if sufficiently verbose and not -w */
 		if (!bootstrap && opt->verbosity > QUIET && opt->write_files)
 			fprintf(stdout, "K = %d, initialization = %d: %f "
-				"(%s) in %3d iterations, %02d:%02d:%02d (%f; %d)\n",
+				"(%s) in %3d iterations, %02d:%02d:%02d (%f; %d), seed: %u\n",
 				mod->K, i, mod->logL,
-				mod->converged?"converged":"not converged",
+				mod->converged ? "converged" : "not converged",
 				mod->n_iter,
-				(int)(mod->seconds_run/3600),
-				(int)((((int)mod->seconds_run)%3600)/60),
-				(((int)mod->seconds_run)%60), mod->max_logL,
-				mod->n_maxll_times);
+				(int)(mod->seconds_run / 3600),
+				(int)((((int)mod->seconds_run) % 3600) / 60),
+				(((int)mod->seconds_run) % 60), mod->max_logL,
+				mod->n_maxll_times, opt->seed);
 
 		/* global mle if K=1; no need for multiple initializations */
 		if (mod->K == 1)
@@ -564,9 +650,8 @@ int maximize_likelihood(options *opt, data *dat, model *mod, int bootstrap)
 			else if (opt->target_revisit <= mod->n_targetll_times)
 				break;
 		}
-
 	}
-
+}
 	return err;
 } /* End of maximize_likelihood(). */
 
@@ -587,22 +672,22 @@ int maximize_likelihood(options *opt, data *dat, model *mod, int bootstrap)
  * @param mod model object
  * @return error status
  */
-int run_bootstrap(options *opt, data *dat, model *mod)
+int run_bootstrap(options* opt, data* dat, model* mod)
 {
 	int i;
 	int ntime = 0;
 	int err = NO_ERROR;
 
-	for (i=0; i < opt->n_bootstrap; i++) {
-		fprintf(stdout, "Bootstrap dataset %d (of %d):", i+1,
+	for (i = 0; i < opt->n_bootstrap; i++) {
+		fprintf(stdout, "Bootstrap dataset %d (of %d):", i + 1,
 			opt->n_bootstrap);
 
 		/* generate bootstrap dataset under H0 */
 		if ((err = parametric_bootstrap(opt, dat, mod)))
 			return err;
-/* temporary : if you want to generate some simulation data to play with
-write_data(opt, dat, 1);
-*/
+		/* temporary : if you want to generate some simulation data to play with
+		write_data(opt, dat, NULL, 1);
+		*/
 
 		/* fit models H0 and HA */
 		if ((err = estimate_model(opt, dat, mod, 1)))
@@ -612,7 +697,7 @@ write_data(opt, dat, 1);
 		if (mod->ts_bs >= mod->ts_obs)
 			ntime++;
 		fprintf(stdout, " test statistics bs=%f obs=%f (%f)\n",
-			mod->ts_bs, mod->ts_obs, (double) ntime/(i+1));
+			mod->ts_bs, mod->ts_obs, (double)ntime / (i + 1));
 	}
 
 	mod->pvalue = ntime / opt->n_bootstrap;
@@ -630,13 +715,13 @@ write_data(opt, dat, 1);
  * @param mod model object pointer
  * @param diff output of difftime()
  */
-void print_model_state(options *opt, data *dat, model *mod, int diff, int newline)
+void print_model_state(options* opt, data* dat, model* mod, int diff, int newline)
 {
 	if (opt->compact) {
 		fprintf(stdout, "%s %s %s %d %u %e %e %e %e %f %f %f ",
 			opt->filename,
 			opt->accel_abbreviation,
-			opt->admixture?"admix":"mix", mod->K, opt->seed,
+			opt->admixture ? "admix" : "mix", mod->K, opt->seed,
 			opt->eta_lower_bound, opt->p_lower_bound,
 			opt->abs_error, opt->rel_error,
 			mod->max_logL, aic(mod), bic(dat, mod));
@@ -645,9 +730,9 @@ void print_model_state(options *opt, data *dat, model *mod, int diff, int newlin
 		else
 			fprintf(stdout, "ND ");
 		fprintf(stdout, "%s %02d:%02d:%02d %d %d %d %d",
-			mod->ever_converged?"converged":"not",
-			(int)(diff/3600),
-			(int)((diff%3600)/60), (diff%60),
+			mod->ever_converged ? "converged" : "not",
+			(int)(diff / 3600),
+			(int)((diff % 3600) / 60), (diff % 60),
 			mod->n_total_iter,
 			mod->n_init, mod->n_maxll_init,
 			mod->n_maxll_times);
@@ -659,11 +744,12 @@ void print_model_state(options *opt, data *dat, model *mod, int diff, int newlin
 			fprintf(stdout, " time");
 		if (newline)
 			fprintf(stdout, "\n");
-	} else {
+	}
+	else {
 		fprintf(stdout, "Dataset: %s\n", opt->filename);
 		fprintf(stdout, "Method/Model: %s, %s, K=%d\n",
 			opt->accel_abbreviation,
-			opt->admixture?"admix":"mix", mod->K);
+			opt->admixture ? "admix" : "mix", mod->K);
 		fprintf(stdout, "Convergence: ae=%e, re=%e\n",
 			opt->abs_error, opt->rel_error);
 		fprintf(stdout, "Bounds: e=%e, p=%e\n",
@@ -671,8 +757,8 @@ void print_model_state(options *opt, data *dat, model *mod, int diff, int newlin
 		fprintf(stdout, "Total number of iterations: %d\n",
 			mod->n_total_iter);
 		fprintf(stdout, "Total time: %02d:%02d:%02d\n",
-			(int)(diff/3600), (int)((diff%3600)/60),
-			(diff%60));
+			(int)(diff / 3600), (int)((diff % 3600) / 60),
+			(diff % 60));
 		fprintf(stdout, "Iteration of max log likelihood: %d "
 			"of %d\n", mod->n_maxll_init, mod->n_init);
 		fprintf(stdout, "Number of times reach max log "
@@ -682,7 +768,7 @@ void print_model_state(options *opt, data *dat, model *mod, int diff, int newlin
 		fprintf(stdout, "AIC: %f\n", aic(mod));
 		fprintf(stdout, "BIC: %f\n", bic(dat, mod));
 		fprintf(stdout, "Converged: %s\n",
-			mod->ever_converged?"yes":"no");
+			mod->ever_converged ? "yes" : "no");
 		if (opt->target_ll && mod->n_targetll_times) {
 			fprintf(stdout, "Iteration of target log "
 				"likelihood (%f): %d\n",
@@ -692,7 +778,8 @@ void print_model_state(options *opt, data *dat, model *mod, int diff, int newlin
 				"log likelihood (%f): %d\n",
 				opt->desired_ll,
 				mod->n_targetll_times);
-		} else if (opt->target_ll && !opt->target_revisit)
+		}
+		else if (opt->target_ll && !opt->target_revisit)
 			fprintf(stdout, "WARNING: Did not reach target log likelihood (%f).\n", opt->desired_ll);
 		if (opt->target_revisit && opt->target_ll && mod->n_targetll_times < opt->target_revisit)
 			fprintf(stdout, "WARNING: Did not reach target log likelihood (%f) %d times\n", opt->desired_ll, opt->target_revisit);
@@ -717,12 +804,13 @@ void print_model_state(options *opt, data *dat, model *mod, int diff, int newlin
  * @param mod model object
  * @return error status
  */
-int synchronize(options *opt, data *dat, model *mod)
+int synchronize(options* opt, data* dat, model* mod)
 {
 	int err = NO_ERROR;
 
 	/* [KSD TODO: there is really not much thinking in this...] */
-	opt->lower_bound = MIN(opt->lower_bound, 1.0 / dat->I / dat->ploidy - 0.5 / dat->I / dat->ploidy);
+	opt->lower_bound = MIN(opt->lower_bound,
+		1.0 / dat->I / dat->ploidy - 0.5 / dat->I / dat->ploidy);
 	opt->eta_lower_bound = opt->lower_bound;
 	opt->p_lower_bound = opt->lower_bound;
 
@@ -734,21 +822,24 @@ int synchronize(options *opt, data *dat, model *mod)
 			free(opt->accel_abbreviation);
 		if (opt->accel_name)
 			free(opt->accel_name);
-		MAKE_1ARRAY(opt->accel_abbreviation, 4 + (int) log10(opt->q));
-		MAKE_1ARRAY(opt->accel_name, strlen(accel_method_names[QN]) + 7 + (int) log10(opt->q));
+		MAKE_1ARRAY(opt->accel_abbreviation, 4 + (int)log10(opt->q));
+		MAKE_1ARRAY(opt->accel_name, strlen(accel_method_names[QN])
+						+ 7 + (int)log10(opt->q));
 		sprintf(opt->accel_abbreviation, "Q%d", opt->q);
-		sprintf(opt->accel_name, "%s (q=%d)", accel_method_names[QN], opt->q);
+		sprintf(opt->accel_name, "%s (q=%d)", accel_method_names[QN],
+									opt->q);
 		if (mod->Ainv)
 			FREE_1ARRAY(mod->Ainv);
 		if (mod->cutu)
 			FREE_1ARRAY(mod->cutu);
-		MAKE_1ARRAY(mod->Ainv, opt->q*opt->q);
+		MAKE_1ARRAY(mod->Ainv, opt->q * opt->q);
 		MAKE_1ARRAY(mod->cutu, opt->q);
 #ifdef LAPACK
 		if (opt->q > 3) {
 			MAKE_1ARRAY(mod->ipiv, opt->q + 1);
-			MAKE_1ARRAY(mod->work, opt->q*opt->q);
-		} else
+			MAKE_1ARRAY(mod->work, opt->q * opt->q);
+		}
+		else
 			MAKE_1ARRAY(mod->A, opt->q * opt->q);
 #else
 		if (mod->A)
@@ -761,9 +852,12 @@ int synchronize(options *opt, data *dat, model *mod)
 		MAKE_1ARRAY(mod->A, opt->q * opt->q);
 #endif
 	} else {
-		MAKE_1ARRAY(opt->accel_abbreviation, strlen(accel_method_abbreviations[opt->accel_scheme]) + 1);
-		MAKE_1ARRAY(opt->accel_name, strlen(accel_method_names[opt->accel_scheme]) + 1);
-		strcpy(opt->accel_abbreviation, accel_method_abbreviations[opt->accel_scheme]);
+		MAKE_1ARRAY(opt->accel_abbreviation, strlen(
+			accel_method_abbreviations[opt->accel_scheme]) + 1);
+		MAKE_1ARRAY(opt->accel_name,
+			strlen(accel_method_names[opt->accel_scheme]) + 1);
+		strcpy(opt->accel_abbreviation,
+			accel_method_abbreviations[opt->accel_scheme]);
 		strcpy(opt->accel_name, accel_method_names[opt->accel_scheme]);
 	}
 
@@ -805,17 +899,24 @@ int synchronize(options *opt, data *dat, model *mod)
  * @param opt options object pointer reference
  * @return error status
  */
-int make_options(options **opt)
+int make_options(options** opt)
 {
 
-	*opt = malloc(sizeof **opt);
+	*opt = malloc(sizeof * *opt);
 	if (*opt == NULL)
 		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
 			MEMORY_ALLOCATION, "options object");
 
 	(*opt)->filename = NULL;
+	(*opt)->path = "./";
+	(*opt)->interleaved = 0;
+	(*opt)->missing_value = MISSING;
+	(*opt)->imputation_method = 0;
+	(*opt)->imputed_outfile = NULL;
 	(*opt)->R_format = 0;
 	(*opt)->alleles_are_indices = 0;
+	(*opt)->one_plus = 0;
+	(*opt)->write_plus_one = 0;
 	(*opt)->seed = 1234567;
 	(*opt)->n_init = 50;
 
@@ -835,7 +936,9 @@ int make_options(options **opt)
 	(*opt)->lower_bound = 1e-8;
 	(*opt)->eta_lower_bound = 1e-8;
 	(*opt)->p_lower_bound = 1e-8;
-	(*opt)->path = "./";
+
+	/* run settings */
+	(*opt)->do_projection = 1;
 	(*opt)->admixture = 0;
 	(*opt)->eta_constrained = 0;
 	(*opt)->n_bootstrap = 0;
@@ -860,6 +963,15 @@ int make_options(options **opt)
 	(*opt)->max_repeat_seconds = 0;
 	(*opt)->write_files = 1;
 	(*opt)->partition_from_file = NULL;
+	(*opt)->parallel = 0;
+	(*opt)->outfile_name = NULL;
+
+	(*opt)->simulate = 0;
+	(*opt)->admix_qfile = NULL;
+	(*opt)->admix_pfile = NULL;
+	(*opt)->simulate_outfile = "sim.stru";
+
+	(*opt)->test_run = 0;
 
 	return NO_ERROR;
 } /* make_options */
@@ -871,7 +983,7 @@ int make_options(options **opt)
  * @param opt options object
  * @return void
  */
-void free_options(options *opt)
+void free_options(options* opt)
 {
 	if (opt->partition_from_file)
 		FREE_VECTOR(opt->partition_from_file);
@@ -891,10 +1003,10 @@ void free_options(options *opt)
  * @param dat data object pointer reference
  * @return error status
  */
-int make_data(data **dat)
+int make_data(data** dat)
 {
 
-	*dat = malloc(sizeof **dat);
+	*dat = malloc(sizeof * *dat);
 	if (*dat == NULL)
 		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
 			MEMORY_ALLOCATION, "data object");
@@ -915,6 +1027,7 @@ int make_data(data **dat)
 	(*dat)->missing_data = 0;
 	(*dat)->I_K = NULL;
 	(*dat)->IL_K = NULL;
+	(*dat)->idv = NULL;
 
 	return NO_ERROR;
 } /* make_data */
@@ -926,7 +1039,7 @@ int make_data(data **dat)
  * @param dat options object
  * @return void
  */
-void free_data(data *dat)
+void free_data(data* dat)
 {
 	int i;
 	if (dat->I_K)
@@ -950,7 +1063,7 @@ void free_data(data *dat)
 	if (dat->bs_ILM)
 		FREE_3ARRAY(dat->bs_ILM);
 	if (dat->pops) {
-		for (i=0; i<dat->numpops; i++)
+		for (i = 0; i < dat->numpops; i++)
 			free(dat->pops[i]);
 		free(dat->pops);
 		dat->pops = NULL;
@@ -970,9 +1083,9 @@ void free_data(data *dat)
  * @param mod model data object pointer reference
  * @return error status
  */
-int make_model(model **mod)
+int make_model(model** mod)
 {
-	*mod = malloc(sizeof **mod);
+	*mod = malloc(sizeof * *mod);
 	if (*mod == NULL)
 		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
 			MEMORY_ALLOCATION, "model object");
@@ -1013,7 +1126,7 @@ int make_model(model **mod)
 	(*mod)->init_etaik = NULL;
 	(*mod)->iter1_etaik = NULL;
 	(*mod)->iter2_etaik = NULL;
-	(*mod)->init_pKLM=NULL;
+	(*mod)->init_pKLM = NULL;
 	(*mod)->iter1_pKLM = NULL;
 	(*mod)->iter2_pKLM = NULL;
 	(*mod)->init_etak = NULL;
@@ -1028,13 +1141,14 @@ int make_model(model **mod)
 	(*mod)->work = NULL;
 #endif
 
+	(*mod)->count_K = NULL;
 	(*mod)->current_i = 0;
 	(*mod)->current_l = 0;
 	(*mod)->current_k = 0;
 	(*mod)->etaupdate = 0;
 	(*mod)->converged = 0;
-	(*mod)->max_logL = -Inf;
-	(*mod)->first_max_logL = -Inf;
+	(*mod)->max_logL = -INFINITY;
+	(*mod)->first_max_logL = -INFINITY;
 	(*mod)->n_iter = 0;
 	(*mod)->n_max_iter = 0;
 	(*mod)->n_total_iter = 0;
@@ -1063,7 +1177,7 @@ int make_model(model **mod)
  * @param dat data object
  * @return error status
  */
-int allocate_model_for_k(options *opt, model *mod, data *dat)
+int allocate_model_for_k(options* opt, model* mod, data* dat)
 {
 
 #ifndef OLDWAY
@@ -1089,7 +1203,8 @@ int allocate_model_for_k(options *opt, model *mod, data *dat)
 #endif
 			if (opt->n_bootstrap && !mod->mle_etak)
 				MAKE_1ARRAY(mod->mle_etak, mod->K);
-		} else {
+		}
+		else {
 #ifndef OLDWAY
 			MAKE_3ARRAY(mod->vetaik, 3, dat->I, mod->K);
 #else
@@ -1099,7 +1214,8 @@ int allocate_model_for_k(options *opt, model *mod, data *dat)
 				MAKE_2ARRAY(mod->mle_etaik, dat->I, mod->K);
 		}
 
-	} else {
+	}
+	else {
 		MAKE_2ARRAY(mod->vik, dat->I, mod->K);
 #ifndef OLDWAY
 		MAKE_2ARRAY(mod->vetak, 3, mod->K);
@@ -1134,7 +1250,8 @@ int allocate_model_for_k(options *opt, model *mod, data *dat)
 			MAKE_2ARRAY(mod->iter1_etaik, dat->I, mod->K);
 			MAKE_2ARRAY(mod->iter2_etaik, dat->I, mod->K);
 #endif
-		} else {
+		}
+		else {
 #ifndef OLDWAY
 			MAKE_2ARRAY(mod->u_etak, opt->q, mod->K);
 			MAKE_2ARRAY(mod->v_etak, opt->q, mod->K);
@@ -1167,7 +1284,7 @@ int allocate_model_for_k(options *opt, model *mod, data *dat)
  * @param mod model object
  * @return void
  */
-void free_model_data(model *mod, options *opt)
+void free_model_data(model* mod, options* opt)
 {
 #ifndef OLDWAY
 	FREE_4ARRAY(mod->vpklm);
@@ -1204,7 +1321,8 @@ void free_model_data(model *mod, options *opt)
 		FREE_2ARRAY(mod->iter2_etaik);
 		FREE_2ARRAY(mod->etaik);
 #endif
-	} else {
+	}
+	else {
 #ifndef OLDWAY
 		FREE_2ARRAY(mod->u_etak);
 		FREE_2ARRAY(mod->v_etak);
@@ -1224,7 +1342,7 @@ void free_model_data(model *mod, options *opt)
  *
  * @param mod model object
  */
-void free_model_mles(model *mod)
+void free_model_mles(model* mod)
 {
 	if (mod->mle_pKLM)
 		FREE_3ARRAY(mod->mle_pKLM);
@@ -1240,10 +1358,10 @@ void free_model_mles(model *mod)
  * @param mod model object
  * @return void
  */
-void free_model(model *mod, options *opt)
+void free_model(model* mod, options* opt)
 {
 	if (mod) {
-		free_model_data(mod,opt);
+		free_model_data(mod, opt);
 		free_model_mles(mod);
 		if (mod->Ainv)
 			FREE_1ARRAY(mod->Ainv);
@@ -1274,230 +1392,330 @@ void free_model(model *mod, options *opt)
  * @param argv command-line arguments
  * @return error status
  */
-int parse_options(options *opt, data *dat, int argc, const char **argv)
+int parse_options(options* opt, data* dat, int argc, const char** argv)
 {
 	int i, j;
 	int err = NO_ERROR;
 	char a;
 
-	for (i=1; i<argc; i++) {
+	for (i = 1; i < argc; i++) {
 		if (strlen(argv[i]) < 2)
-			usage_error(argv, i, (void *)opt);
+			usage_error(argv, i, (void*)opt);
 
 		/* skip to argument name */
 		j = 1;
 		a = argv[i][j];
-		while (a == '-' && ++j < (int) strlen(argv[i]))
+		while (a == '-' && ++j < (int)strlen(argv[i]))
 			a = argv[i][j];
 
 		switch (a) {
-			case 'a':
-				opt->admixture = 1;
-				break;
-			case 'A':
-				opt->afile = argv[++i];
-				break;
-			case 'b':
+		case 'a':
+			opt->admixture = 1;
+			break;
+		case 'A':
+			opt->afile = argv[++i];
+			break;
+		case 'b':
+			if (i + 1 == argc)
+				goto CMDLINE_ERROR;
+			if (!strncmp(&argv[i][j], "bou", 3)) {
+				opt->lower_bound = read_double(argc, argv, ++i,
+								(void *)opt);
+				if (opt->lower_bound < 0 || errno)
+					goto CMDLINE_ERROR;
+			} else {
 				opt->n_bootstrap = read_int(argc, argv, ++i,
-					(void *)opt);
+								(void*)opt);
 				if (opt->n_bootstrap < 0 || errno
-					|| opt->block_relax)
+							|| opt->block_relax)
 					goto CMDLINE_ERROR;
-				break;
-			case 'c':
-				opt->eta_constrained = 1;
-				break;
-			case 'd':
-				opt->path = argv[++i];
-				break;
-			case 'e':
-				opt->rel_error = read_double(argc, argv, ++i,
-					(void *)opt);
-				if (opt->rel_error < 0 || errno)
+			}
+			break;
+		case 'B':
+			opt->test_run = 1;
+			break;
+		case 'c':
+			opt->eta_constrained = 1;
+			break;
+		case 'd':
+			opt->path = argv[++i];
+			break;
+		case 'e':
+			opt->rel_error = read_double(argc, argv, ++i,
+				(void*)opt);
+			if (opt->rel_error < 0 || errno)
+				goto CMDLINE_ERROR;
+			break;
+		case 'E':
+			opt->abs_error = read_double(argc, argv, ++i,
+				(void*)opt);
+			if (opt->abs_error < 0 || errno)
+				goto CMDLINE_ERROR;
+			break;
+		case 'f':
+			if (!strncmp(&argv[i][j], "fo", 2)) {
+				if (i + 1 >= argc)
 					goto CMDLINE_ERROR;
-				break;
-			case 'E':
-				opt->abs_error = read_double(argc, argv, ++i,
-					(void *)opt);
-				if (opt->abs_error < 0 || errno)
+				++i;
+				if (!strcmp(argv[i], "ped"))
+					opt->output_format = PED;
+				else if (!strcmp(argv[i], "stru"))
+					opt->output_format = STRUCTURE;
+				else
 					goto CMDLINE_ERROR;
-				break;
-			case 'f':
+			} else {
 				opt->filename = argv[++i];
-				break;
-			case 'g':
-				opt->adjust_step = read_int(argc, argv, ++i,
-					(void *)opt);
-				if (opt->adjust_step < 0 || errno)
-					goto CMDLINE_ERROR;
-				break;
-			case 'h':
-				fprint_usage(stdout, argv[0], (void *)opt);
-				return CUSTOM_ERROR;
-			case 'i':
+				opt->filename_path = malloc(
+						strlen(opt->filename) + 1);
+				if (!opt->filename_path)
+					return mmessage(ERROR_MSG,
+						MEMORY_ALLOCATION,
+						"options::filename_path");
+				if (opt->filename[strlen(opt->filename)-1] == '\\')
+					return mmessage(ERROR_MSG,
+						INVALID_USER_SETUP, "Filename "
+						"'%s' provided to '-f' option "
+						"looks like the name of a "
+						"directory.\n", opt->filename);
+				strcpy(opt->filename_path, opt->filename);
+				for (int i = strlen(opt->filename) - 1; i; --i)
+					if (opt->filename[i] == '/') {
+						opt->filename_file = &opt->filename[i+1];
+						opt->filename_path[i+1] = 0;
+						break;
+					}
+			}
+			break;
+		case 'g':
+			opt->adjust_step = read_int(argc, argv, ++i,
+				(void*)opt);
+			if (opt->adjust_step < 0 || errno)
+				goto CMDLINE_ERROR;
+			break;
+		case 'h':
+			fprint_usage(stdout, argv[0], (void*)opt);
+			return CUSTOM_ERROR;
+		case 'i':
+			if (!strncmp(&argv[i][j], "im", 2)) {
+				opt->imputation_method = 1;
+				if (i + 1 < argc && argv[i + 1][0] != '-')
+					opt->imputed_outfile = argv[++i];
+				if (opt->verbosity >= TALKATIVE)
+					mmessage(INFO_MSG, DEBUG_MSG, "Will "
+						"impute missing data and output"
+								" to '%s'.\n",
+							opt->imputed_outfile);
+			} else {
 				opt->n_init_iter = read_int(argc, argv, ++i,
-					(void *)opt);
+					(void*)opt);
 				if (opt->n_init_iter < 0 || errno)
 					goto CMDLINE_ERROR;
-				break;
-			case 'I':
-				opt->alleles_are_indices = 1;
-				break;
-			case '1':
-				opt->min_K = read_int(argc, argv, ++i,
-					(void *)opt);
-				if (opt->min_K < 1 || errno)
-					goto CMDLINE_ERROR;
-				break;
-			case '2':
-				opt->max_K = read_int(argc, argv, ++i,
-					(void *)opt);
-				if (opt->max_K < 1 || errno)
-					goto CMDLINE_ERROR;
-				break;
-			case 'k':
-				opt->max_K = read_int(argc, argv, ++i,
-					(void *)opt);
-				if (opt->max_K < 1 || errno)
-					goto CMDLINE_ERROR;
-				opt->min_K = opt->max_K;
-				break;
-			case 'm':
+			}
+			break;
+		case 'I':
+			if (!strcmp(&argv[i][j], "I1"))
+				opt->one_plus = 1;
+			opt->alleles_are_indices = 1;
+			break;
+		case '1':
+			opt->min_K = read_int(argc, argv, ++i,
+				(void*)opt);
+			if (opt->min_K < 1 || errno)
+				goto CMDLINE_ERROR;
+			break;
+		case '2':
+			opt->max_K = read_int(argc, argv, ++i,
+				(void*)opt);
+			if (opt->max_K < 1 || errno)
+				goto CMDLINE_ERROR;
+			break;
+		case 'k':
+			opt->max_K = read_int(argc, argv, ++i,
+				(void*)opt);
+			if (opt->max_K < 1 || errno)
+				goto CMDLINE_ERROR;
+			opt->min_K = opt->max_K;
+			break;
+		case 'm':
+			if (!strncmp(&argv[i][j], "mi", 2)) {
+				opt->missing_value = read_int(argc, argv, ++i,
+					(void *) opt);
+			} else {
 				opt->n_rand_em_init = read_int(argc, argv, ++i,
-					(void *)opt);
+					(void*)opt);
 				if (opt->n_rand_em_init == 0)
 					opt->initialization_procedure = NOTHING;
 				if (opt->n_rand_em_init < 0 || errno)
 					goto CMDLINE_ERROR;
-				break;
-			case 'n':
-				opt->n_init = read_int(argc, argv, ++i,
-					(void *)opt);
-				if (errno)
-					goto CMDLINE_ERROR;
-				break;
-			case 'p':
+			}
+			break;
+		case 'M':
+			opt->parallel = 1;
+			opt->n_repeat = 1;
+			opt->verbosity = SILENT;
+			break;
+		case 'n':
+			opt->n_init = read_int(argc, argv, ++i,
+				(void*)opt);
+			if (opt->n_init == 0)
+				opt->n_repeat = 0;
+			if (errno)
+				goto CMDLINE_ERROR;
+			break;
+		case 'o':
+			opt->outfile_name = argv[++i];
+			break;
+		case 'p':
+			if (!strncmp(&argv[i][j], "pr", 2)) {
+				opt->do_projection = 0;
+			} else if (!strncmp(&argv[i][j], "pl", 2)) {
+				opt->write_plus_one = 1;
+			} else {
 				dat->ploidy = read_int(argc, argv, ++i,
-					(void *)opt);
+					(void*)opt);
 				if (dat->ploidy < 1 || errno)
 					goto CMDLINE_ERROR;
-				break;
-			case 'P':
-				opt->pfile = argv[++i];
-				break;
-			case 'Q':
-				opt->qfile = argv[++i];
-				break;
-			case 'R':
-				opt->R_format = 1;
-				break;
-			case 'r':
-				opt->seed = read_uint(argc, argv, ++i,
-					(void *)opt);
-				srand(opt->seed);
-				break;
-			case 'x':
-				opt->block_relax = 1;
-				if (opt->n_bootstrap > 0 || errno)
+			}
+			break;
+		case 'P':
+			opt->pfile = argv[++i];
+			break;
+		case 'Q':
+			opt->qfile = argv[++i];
+			break;
+		case 'R':
+			opt->R_format = 1;
+			break;
+		case 'r':
+			opt->seed = read_uint(argc, argv, ++i,
+				(void*)opt);
+			srand(opt->seed);
+			break;
+		case 'x':
+			opt->block_relax = 1;
+			if (opt->n_bootstrap > 0 || errno)
+				goto CMDLINE_ERROR;
+			//if ( || errno)
+			//	goto CMDLINE_ERROR;
+			break;
+		case 's':
+			if (!strncmp(&argv[i][j], "si", 2)) {
+				if (i + 2 == argc)
 					goto CMDLINE_ERROR;
-				//if ( || errno)
-				//	goto CMDLINE_ERROR;
-				break;
-			case 's':
+				opt->simulate = 1;
+				opt->admix_qfile = argv[++i];
+				opt->admix_pfile = argv[++i];
+				if (i + 1 < argc && argv[i + 1][0] != '-') {
+					opt->simulate_outfile = argv[++i];
+					opt->output_format = STRUCTURE;
+				}
+				if (opt->verbosity >= TALKATIVE)
+					mmessage(INFO_MSG, DEBUG_MSG,
+					"Simulating from admixture output "
+					"'%s, %s', writing to '%s'.\n",
+					opt->admix_qfile, opt->admix_pfile,
+					opt->simulate_outfile);
+			} else {
+				if (i + 1 == argc)
+					goto CMDLINE_ERROR;
 				opt->accel_scheme = read_int(argc, argv, ++i,
-					(void *)opt);
+					(void*)opt);
 				if (opt->accel_scheme < 0 || errno)
 					goto CMDLINE_ERROR;
-				break;
-			case 't':
-				opt->n_seconds = 60*read_uint(argc, argv, ++i,
-					(void *)opt);
-				break;
-			case 'T':
-				opt->max_iter = read_int(argc, argv, ++i,
-					(void *)opt);
-				if (opt->max_iter < 0 || errno)
-					goto CMDLINE_ERROR;
-				break;
-			case 'u':
-				while (++i < argc && argv[i][0] != '-') {
-					switch (argv[i][0]) {
-						case 'l':
-							opt->target_ll = 1;
-							opt->desired_ll =
-								read_double(
-								argc, argv, ++i,
-								(void *)opt);
-							break;
-						case 'n':
-							opt->target_revisit =
-								read_int(argc,
-								argv, ++i,
-								(void *)opt);
-							if (opt->target_revisit
-								< 0 || errno)
-								goto CMDLINE_ERROR;
-							break;
-						default:
-							err = INVALID_CMD_OPTION;
-							goto CMDLINE_ERROR;
-					}
-				}
-				i--;
-				break;
-			case 'v':
-				if (i + 1 == argc)
-					opt->verbosity = VERBOSE;
-				else {
-					char *ret_ptr;
-					opt->verbosity = strtol(argv[++i], &ret_ptr, 0);
-					if (errno)
-						usage_error(argv, i, (void *)opt);
-					else if (ret_ptr == argv[i]) {
-						opt->verbosity = VERBOSE;
-						i--;
-					}
-				}
-				break;
-			case 'w':
-				while (++i < argc && argv[i][0] != '-') {
-					switch (argv[i][0]) {
-						case 't':
-							opt->repeat_seconds =
-								60*read_int(
-								argc, argv, ++i,
-								(void *)opt);
-							break;
-						case 'm':
-							opt->max_repeat_seconds =
-								60*read_int(
-								argc, argv, ++i,
-								(void *)opt);
-							break;
-						case 'n':
-							opt->n_repeat =
-								read_int(argc,
-								argv, ++i,
-								(void *)opt);
-							if (opt->n_repeat
-								<= 0 || errno)
-								goto CMDLINE_ERROR;
-							break;
-						default:
-							err = INVALID_CMD_OPTION;
-							goto CMDLINE_ERROR;
-					}
-				}
-				i--;
-				opt->write_files = 0;
-				break;
-			default:
-				err = INVALID_CMD_OPTION;
+			}
+			break;
+		case 't':
+			opt->n_seconds = 60 * read_uint(argc, argv, ++i,
+				(void*)opt);
+			break;
+		case 'T':
+			opt->max_iter = read_int(argc, argv, ++i,
+				(void*)opt);
+			if (opt->max_iter < 0 || errno)
 				goto CMDLINE_ERROR;
+			break;
+		case 'u':
+			while (++i < argc && argv[i][0] != '-') {
+				switch (argv[i][0]) {
+				case 'l':
+					opt->target_ll = 1;
+					opt->desired_ll =
+						read_double(
+							argc, argv, ++i,
+							(void*)opt);
+					break;
+				case 'n':
+					opt->target_revisit =
+						read_int(argc,
+							argv, ++i,
+							(void*)opt);
+					if (opt->target_revisit
+						< 0 || errno)
+						goto CMDLINE_ERROR;
+					break;
+				default:
+					err = INVALID_CMD_OPTION;
+					goto CMDLINE_ERROR;
+				}
+			}
+			i--;
+			break;
+		case 'v':
+			if (i + 1 == argc)
+				opt->verbosity = VERBOSE;
+			else {
+				char* ret_ptr;
+				opt->verbosity = strtol(argv[++i], &ret_ptr, 0);
+				if (errno)
+					usage_error(argv, i, (void*)opt);
+				else if (ret_ptr == argv[i]) {
+					opt->verbosity = VERBOSE;
+					i--;
+				}
+			}
+			if (opt->verbosity >= TALKATIVE)
+				mmessage(INFO_MSG, DEBUG_MSG, "Set verbosity "
+					"level to %u.\n", opt->verbosity);
+			break;
+		case 'w':
+			while (++i < argc && argv[i][0] != '-') {
+				switch (argv[i][0]) {
+				case 't':
+					opt->repeat_seconds =
+						60 * read_int(
+							argc, argv, ++i,
+							(void*)opt);
+					break;
+				case 'm':
+					opt->max_repeat_seconds =
+						60 * read_int(
+							argc, argv, ++i,
+							(void*)opt);
+					break;
+				case 'n':
+					opt->n_repeat =
+						read_int(argc,
+							argv, ++i,
+							(void*)opt);
+					if (opt->n_repeat
+						<= 0 || errno)
+						goto CMDLINE_ERROR;
+					break;
+				default:
+					err = INVALID_CMD_OPTION;
+					goto CMDLINE_ERROR;
+				}
+			}
+			i--;
+			opt->write_files = 0;
+			break;
+		default:
+			err = INVALID_CMD_OPTION;
+			goto CMDLINE_ERROR;
 		}
 	}
 
-	if (opt->filename == NULL)
+	if (opt->filename == NULL && !opt->simulate)
 		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
 			INVALID_CMDLINE, "You must specify the data file "
 			"with command line option '-f'.  Try '-h' for help.\n");
@@ -1509,7 +1727,7 @@ CMDLINE_ERROR:
 		err = INVALID_CMD_ARGUMENT;
 		i--;
 	}
-	usage_error(argv, i, (void *)opt);
+	usage_error(argv, i, (void*)opt);
 	return err;
 } /* parse_options */
 
@@ -1520,11 +1738,11 @@ CMDLINE_ERROR:
  * @param invocation_name name of command
  * @return void
  */
-void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
+void fprint_usage(FILE* fp, const char* invocation_name, void* obj)
 {
-	options *opt = obj ? (options *) obj : NULL;
+	options* opt = obj ? (options*)obj : NULL;
 	/* strip the "./" from the beginning of the program invocation */
-	const char *prog_name = strlen(invocation_name) > 2
+	const char* prog_name = strlen(invocation_name) > 2
 		&& invocation_name[0] == '.' ? &(invocation_name[2])
 		: invocation_name;
 	fprintf(fp, "\nNAME\n");
@@ -1532,26 +1750,32 @@ void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
 		prog_name);
 	fprintf(fp, "\nSYNOPSIS\n");
 	fprintf(fp,
-	"\t%s [-k <n> | -1 <n> -2 <n>] [-a -b <n> -c -C <n> -d <s> -e <d> -E <d> -f <d> -g <d> -h"
-	"\n\t\t-i <n> -I -m <n> -n <n> -p <n> -R -s <n> -t <n> -T <d> -u <s> -v -w <s> -x] -f <s>\n"
-	"\n\t\twhere <n> stands for integer, <s> for string, <d> for double",
+		"\t%s [-k <n> | -1 <n> -2 <n>] [-a -b <n> -B -bou <d> -c -C <n> -d <s> -e <d> -E <d> -f <d> -g <d> -h"
+		"\n\t\t-i <n> -I -m <n> --missing <n> -M <n> -n <n> -o <s> -p <n> --projection --plus -R -s <n> -t <n> -T <d> -u <s> -v -w <s> -x] -f <s> --format <s>"
+		"\n\t\t--simulate <qfile> <pfile> <ofile>"
+		"\n\n\t\twhere <n> stands for integer, <s> for string, <d> for double",
 		prog_name);
 	fprintf(fp, "\nDESCRIPTION\n");
 	fprintf(fp,
-	"\t%s clusters multivariate discrete data observed on a sample of\n"
-	"\tindividuals using the EM algorithm.  It handles data missing at\n"
-	"\trandom.  It assumes coordinates within an individual are independent.\n"
-	"\tIt allows the admixture model, where each coordinate is independently\n"
-	"\tdrawn from a cluster, or the mixture model, where each individual is\n"
-	"\tdrawn from a cluster.\n", prog_name);
+		"\t%s clusters multivariate discrete data observed on a sample of\n"
+		"\tindividuals using the EM algorithm.  It handles data missing at\n"
+		"\trandom.  It assumes coordinates within an individual are independent.\n"
+		"\tIt allows the admixture model, where each coordinate is independently\n"
+		"\tdrawn from a cluster, or the mixture model, where each individual is\n"
+		"\tdrawn from a cluster.\n", prog_name);
 	fprintf(fp, "\nOPTIONS\n"
 		/* ---------------------------------------------------------- */
 		"\t-a\t"
 		"Choose admixture model (default: %s).\n"
-		"\t-b\t"
+		"\t-b, --bootstrap\t"
 		"Bootstrap test of H0: K=<k>-1 vs. Ha: K=<k>, where <k> is\n"
 		"\t\tgiven by -k option.  Specify number of bootstraps as\n"
 		"\t\targument (default: %d).\n"
+		"\t--bound\t"
+		"Lower bound for allele and mixing/admixing proportions\n"
+		"\t\t(default: %e).\n"
+		"\t-B\t"
+		"DEBUG ONLY: turns on opt->test_run\n"
 		"\t-c\t"
 		"Constrain mixing proportions identical across individuals\n"
 		"\t\t(only enforced with -a; default: %s).\n"
@@ -1567,6 +1791,10 @@ void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
 		"\t\t(default: %.1e).\n"
 		"\t-f\t"
 		"Name of data file (STRUCTURE format).\n"
+		"\t--format\n"
+		"\t\tFormat of data output file (default: stru).\n"
+		"\t\t\tstru\tSTRUCTURE format, the default.\n"
+		"\t\t\tped\tPlink's ped format.\n"
 		"\t-g\t"
 		"Adjust step size at most this many times (default: %d)\n"
 		"\t-h\t"
@@ -1575,28 +1803,43 @@ void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
 		"Initial iterations prior to acceleration (default: %d)\n"
 		"\t-I\t"
 		"Alleles are indices (no sorting, etc.) (default: %s)\n"
+		"\t-I1\t"
+		"Alleles are indices plus 1 (no sorting, etc.) (default: %s)\n"
 		"\t-k\t"
 		"The number of clusters to fit (default: %d).\n"
 		"\t-1\t"
 		"The minimum number of clusters to fit (default: %d).\n"
 		"\t-2\t"
 		"The maximum number of clusters to fit (default: %d).\n",
-		opt->admixture?"yes":"no", opt->n_bootstrap,
-		opt->eta_constrained?"yes":"no", opt->max_iter,
+		opt->admixture ? "yes" : "no", opt->n_bootstrap,
+		opt->lower_bound,
+		opt->eta_constrained ? "yes" : "no", opt->max_iter,
 		opt->path, opt->rel_error, opt->abs_error,
 		opt->adjust_step,
-		opt->n_init_iter, opt->alleles_are_indices?"yes":"no",
+		opt->n_init_iter, opt->alleles_are_indices ? "yes" : "no",
+		opt->one_plus ? "yes" : "no",
 		opt->max_K, opt->min_K, opt->max_K
 	);
 	fprintf(fp,
 		"\t-m\t"
 		"The number of Rand EM initializations, 0 to avoid Rand EM\n"
 		"\t\t(default: %d).\n"
+		"\t--missing\n"
+		"\t\tInteger value that indicates missing (default: -9).\n"
+		"\t-M\t"
+		"Parallelization option (in progress)\n"
+		"\t\t(default: no parallelization). \n"
 		"\t-n\t"
 		"Number of initializations to run EM to convergence\n"
 		"\t\t(default: %d).\n"
+		"\t-o\t"
+		"Option to create unique output file name\n"
 		"\t-p\t"
 		"The ploidy (default: 2).\n"
+		"\t--projection\n"
+		"\t\tTurn off simplex projection (default: on).\n"
+		"\t--plus\n"
+		"\t\tPlus one to alleles when writing data (default: on).\n"
 		"\t-r\t"
 		"Random number (default: %u).\n"
 		"\t-R\t"
@@ -1610,12 +1853,14 @@ void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
 		"\t\t\t3 - SQUAREM version 3\n"
 		"\t\t\t4 - Quasi Newton version 1 (1 secant condition)\n"
 		"\t\t\t5 - Quasi Newton version 2 (2 secant conditions)\n"
-		"\t\t\t6 - Quasi Newton version 3 (3 secant conditions)\n",
+		"\t\t\t6 - Quasi Newton version 3 (3 secant conditions)\n"
+		"\t--simulate <qfile> <pfile> [<ofile>]\t"
+		"Simulate data from admixture <qfile>, <pfile>, and write data to <ofile>.\n",
 		opt->n_rand_em_init, opt->n_init, opt->seed,
-		opt->R_format?"yes":"no", accel_method_names[MIN(opt->accel_scheme, QN)]
+		opt->R_format ? "yes" : "no", accel_method_names[MIN(opt->accel_scheme, QN)]
 	);
-	if (opt->accel_scheme>=QN)
-		fprintf(fp, "q=%d", opt->accel_scheme-SQS3);
+	if (opt->accel_scheme >= QN)
+		fprintf(fp, "q=%d", opt->accel_scheme - SQS3);
 	fprintf(fp,
 		"\t-u\t"
 		"Iterate until beat target\n"
@@ -1632,13 +1877,13 @@ void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
 		"\t\t-w n <n>: repeat at least <n> times (default: %d)\n"
 		"\t\t-w t <n>: repeat at least <n> minutes (default: %d)\n"
 		"\t\t-w m <n>: repeat at most <n> minutes (default: %d)\n"
-		"\t-z\t"
+		"\t-x\t"
 		"Use block relaxation algorithm (default: %s).\n",
-		opt->target_revisit, opt->target_ll?opt->desired_ll:0,
+		opt->target_revisit, opt->target_ll ? opt->desired_ll : 0,
 		opt->n_seconds, opt->verbosity,
 		opt->write_files ? "yes" : "no",
 		opt->n_repeat, opt->repeat_seconds,
-		opt->max_repeat_seconds, opt->block_relax?"yes":"no"
+		opt->max_repeat_seconds, opt->block_relax ? "yes" : "no"
 	);
 } /* fprintf_usage */
 
@@ -1652,10 +1897,10 @@ void fprint_usage(FILE *fp, const char *invocation_name, void *obj)
  * @param cl2 estimated classification vector
  * @return Rand index, Adjusted Rand index, or E index
  */
-double adj_rand(int n, int k1, int k2, int *cl1, int *cl2, int type)
+double adj_rand(int n, int k1, int k2, int* cl1, int* cl2, int type)
 {
-	int i, j, **nmat;
-	double *sumtr, *sumpr;
+	int i, j, ** nmat;
+	double* sumtr, * sumpr;
 	double sumprsq, sumtrsq, sumsq, discordant, sumtrprsq;
 	double term1, term2, term3;
 	double nij2sum, nidot2sum, ndotj2sum;
@@ -1668,7 +1913,7 @@ double adj_rand(int n, int k1, int k2, int *cl1, int *cl2, int type)
 	for (i = 0; i < n; i++)
 		nmat[cl1[i]][cl2[i]]++;
 
-	sumtrsq=0.;
+	sumtrsq = 0.;
 	for (i = 0; i < k1; i++) {
 		sumtr[i] = 0.;
 		for (j = 0; j < k2; j++)
@@ -1690,10 +1935,10 @@ double adj_rand(int n, int k1, int k2, int *cl1, int *cl2, int type)
 			for (j = 0; j < k2; j++)
 				sumtrprsq += sumtr[i] * sumtr[i] * sumpr[j] * sumpr[j];
 
-		index = sumtrprsq / (n*(n-1) + (double) n*n/(n-1))
-			- (sumprsq + sumtrsq)/(n-1);
+		index = sumtrprsq / (n * (n - 1) + (double)n * n / (n - 1))
+			- (sumprsq + sumtrsq) / (n - 1);
 		index *= 2.;
-		index /= n*(n-1);
+		index /= n * (n - 1);
 	}
 
 	if (type == RAND_INDEX) {
@@ -1702,29 +1947,30 @@ double adj_rand(int n, int k1, int k2, int *cl1, int *cl2, int type)
 			for (j = 0; j < k2; j++)
 				sumsq += nmat[i][j] * nmat[i][j];
 
-		discordant = 0.5*(sumtrsq + sumprsq) - sumsq;
+		discordant = 0.5 * (sumtrsq + sumprsq) - sumsq;
 
-		index = 1.0 - discordant / (n * (n-1.) / 2.);
+		index = 1.0 - discordant / (n * (n - 1.) / 2.);
 
-	} else if (type == ADJUSTED_RAND_INDEX) {
+	}
+	else if (type == ADJUSTED_RAND_INDEX) {
 
 		nidot2sum = 0.;
 		for (i = 0; i < k1; i++)
-			nidot2sum += sumtr[i] * (sumtr[i]-1) / 2;
+			nidot2sum += sumtr[i] * (sumtr[i] - 1) / 2;
 
 		nij2sum = 0.;
 		for (i = 0; i < k1; i++)
 			for (j = 0; j < k2; j++)
-				nij2sum += nmat[i][j] * (nmat[i][j]-1) / 2.0;
+				nij2sum += nmat[i][j] * (nmat[i][j] - 1) / 2.0;
 
 		ndotj2sum = 0.;
 		for (i = 0; i < k2; i++)
-			ndotj2sum += sumpr[i] * (sumpr[i]-1) / 2.0;
+			ndotj2sum += sumpr[i] * (sumpr[i] - 1) / 2.0;
 
 
-		term3 = nidot2sum * ndotj2sum / (n * (n-1.) / 2.);
+		term3 = nidot2sum * ndotj2sum / (n * (n - 1.) / 2.);
 		term1 = nij2sum - term3;
-		term2 = (nidot2sum + ndotj2sum)/2 - term3;
+		term2 = (nidot2sum + ndotj2sum) / 2 - term3;
 		index = term1 / term2;
 	}
 

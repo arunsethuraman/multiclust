@@ -9,65 +9,111 @@
 
 #include "multiclust.h"
 
-/**
- * Write data to file.  Presumably, you call this function to write
- * simulated data, and simulated data is in _data::ILM, so set last
- * argument non-zero.
- *
- * @param opt options ojbect
- * @param dat data object
- * @param use_ILM write from dat->ILM (not dat->IL)
- * @return error status
- */
-int write_data(options *opt, data *dat, int use_ILM)
+ /**
+  * Write data to file.  Presumably, you call this function to write
+  * simulated data, and simulated data is in _data::ILM, so set last
+  * argument non-zero.
+  *
+  * @param opt options ojbect
+  * @param dat data object
+  * @param use_ILM write from dat->ILM (not dat->IL)
+  * @return error status
+  */
+int write_data(options *opt, data *dat, char const *outfile, int use_ILM)
 {
 	int i, j, l, m, msum, r, r2;
-	char *outfile = NULL;
-	int len = strlen(opt->path) + 7;
+	int haplotype_no;
+	char *filename = NULL;
 	FILE *fp;
 
-	r2 = r = rand();
-	while (r2) {
-		len++;
-		r2 /= 10;
+	if (!outfile) {
+		int len = strlen(opt->path) + 7;
+		r2 = r = rand();
+		while (r2) {
+			len++;
+			r2 /= 10;
+		}
+
+		MAKE_1ARRAY(filename, len);
+
+		sprintf(filename, "%sbs%d.str", opt->path, r);
+
+		if ((fp = fopen(filename, "w")) == NULL) {
+			FREE_1ARRAY(filename);
+			return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
+				FILE_OPEN_ERROR, filename);
+		}
+		FREE_1ARRAY(filename);
+	} else if ((fp = fopen(outfile, "w")) == NULL) {
+		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
+				FILE_OPEN_ERROR, outfile);
 	}
 
-	MAKE_1ARRAY(outfile, len);
-
-	sprintf(outfile, "%sbs%d.str", opt->path, r);
-
-	if ((fp = fopen(outfile, "w")) == NULL) {
-		FREE_1ARRAY(outfile);
-		message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
-			FILE_OPEN_ERROR, outfile);
-	}
 
 	/* header line */
-	for (l=0; l<dat->L; l++)
-		fprintf(fp, "%sloc%d", l?" ":"", l+1);
-	fprintf(fp, "\n");
+	if (opt->output_format == STRUCTURE) {
+		for (l = 0; l < dat->L; l++)
+			fprintf(fp, "%sloc%d", l ? " " : "", l + 1);
+		fprintf(fp, "\n");
+	}
+
+	if (opt->output_format == PED)
+		opt->write_plus_one = 1;
 
 	if (!use_ILM) {
-		for (i=0; i<dat->I; i++)
-			for (j=1; j<=dat->ploidy; j++) {
-				for (l=0; l<dat->L; l++)
-					fprintf(fp, " %d", dat->IL[i][l]);
+		if (opt->output_format == STRUCTURE) {
+			for (i = 0; i < dat->I; ++i) {
+				haplotype_no = dat->ploidy * i;
+				for (j = 0; j < dat->ploidy; j++) {
+					if (dat->idv)
+						fprintf(fp, "%s %s",
+							dat->idv[i].name,
+							dat->pops[dat->idv[i].locale]);
+					else
+						fprintf(fp, "%d %d", i, i);
+					for (l = 0; l < dat->L; l++)
+						fprintf(fp, " %d",
+							opt->write_plus_one 
+							? dat->IL[haplotype_no + j][l] + 1 
+							: dat->IL[haplotype_no + j][l]);
+					fprintf(fp, "\n");
+				}
+			}
+		} else {
+			for (i = 0; i < dat->I; ++i ) {
+				haplotype_no = dat->ploidy * i;
+				if (dat->idv)
+					fprintf(fp, "%s %s 0 0 0 -9",
+						dat->idv[i].name,
+						dat->idv[i].name);
+				else
+					fprintf(fp, "%d %d 0 0 0 -9", i, i);
+				for (l = 0; l < dat->L; ++l) {
+					for (j = 0; j < dat->ploidy; ++j) {
+						fprintf(fp, " %d",
+							opt->write_plus_one
+							? dat->IL[haplotype_no + j][l] + 1
+							: dat->IL[haplotype_no + j][l]);
+					}
+				}
 				fprintf(fp, "\n");
 			}
+		}
 	} else {
 
-		for (i=0; i<dat->I; i++) {			/* individual */
-			for (j=1; j<=dat->ploidy; j++) {	/* haplotype */
+		for (i = 0; i < dat->I; i++) {			/* individual */
+			for (j = 1; j <= dat->ploidy; j++) {	/* haplotype */
 				fprintf(fp, "%s %s", dat->idv[i].name,
 					dat->pops[dat->idv[i].locale]);
-				for (l=0; l<dat->L; l++) {	/* locus */
+				for (l = 0; l < dat->L; l++) {	/* locus */
 					/* skip ahead to next allele to print */
 					m = 0;
 					msum = dat->ILM[i][l][m];
 					while (msum < j)
 						msum += dat->ILM[i][l][++m];
 					if (dat->L_alleles)
-						fprintf(fp, " %d", dat->L_alleles[l][m]);
+						fprintf(fp, " %d", opt->write_plus_one ?
+							dat->L_alleles[l][m] + 1 : dat->L_alleles[l][m]);
 					else
 						fprintf(fp, " %d", m);
 				}
@@ -75,10 +121,10 @@ int write_data(options *opt, data *dat, int use_ILM)
 			}
 		}
 	}
-	
-	fclose(fp);
 
-	FREE_1ARRAY(outfile);
+	fclose(fp);
+	if (filename)
+		free(filename);
 
 	return NO_ERROR;
 } /* End of write_data(). */
@@ -93,9 +139,9 @@ int write_data(options *opt, data *dat, int use_ILM)
  * @param mod model object
  * @return error status
  */
-int write_file(char *outfile, options *opt, data *dat, model *mod)
+int write_file(char* outfile, options* opt, data* dat, model* mod)
 {
-	FILE *fp;
+	FILE* fp;
 	int i, k, l, m;
 
 	if ((fp = fopen(outfile, "w")) == NULL)
@@ -105,14 +151,15 @@ int write_file(char *outfile, options *opt, data *dat, model *mod)
 	/* mixing proportions eta */
 	if (!opt->admixture || opt->eta_constrained) {
 		/* etak */
-		for(k = 0; k < mod->K; k++)
+		for (k = 0; k < mod->K; k++)
 #ifndef OLDWAY
 			fprintf(fp, "%f ", mod->vetak[mod->pindex][k]);
 #else
 			fprintf(fp, "%f ", mod->etak[k]);
 #endif
 		fprintf(fp, "\n\n");
-	} else {
+	}
+	else {
 		/* etaik */
 		for (i = 0; i < dat->I; i++) {
 			for (k = 0; k < mod->K; k++)
@@ -153,29 +200,46 @@ int write_file(char *outfile, options *opt, data *dat, model *mod)
  * @param mod model object
  * @return error status
  */
-int write_file_detail(options *opt, data *dat, model *mod)
+int write_file_detail(options* opt, data* dat, model* mod)
 {
-	FILE *fp;
+	FILE* fp;
 	int i, k, l, m;
 	int len;		/* length of outfile name */
-	char *outfile = NULL;	/* outfile name */
-
-	/* compute length of output filename */
-	len = strlen(opt->path) + strlen(opt->filename) + (int) (log(mod->K)/log(10)) + 21;
-
-	MAKE_1ARRAY(outfile, len);
+	char* outfile = NULL;	/* outfile name */
 
 	/* print maximum log likelihood, AIC, BIC, and partition counts */
-	sprintf(outfile, "%s%s.%s.K=%d.out.txt", opt->path, opt->filename,
-		opt->admixture?"admix":"mix", mod->K);
+	if (opt->outfile_name != NULL) {
+		len = strlen(opt->outfile_name) + (int)(log(mod->K) / log(10)) + 21;
+		MAKE_1ARRAY(outfile, len);
+		sprintf(outfile, "%s.%s.K=%d.out.txt", opt->outfile_name,
+			opt->admixture ? "admix" : "mix", mod->K);
+	}
+	else {
+		/*
+		size_t base_idx = strlen(opt->filename);
+		while (base_idx-- > 0 && opt->filename[base_idx] != '/' && opt->filename[base_idx] != '\\');
+		if (base_idx || opt->filename[base_idx] == '/' || opt->filename[base_idx] == '\\')
+			++base_idx;
+		 */
+		/* compute length of output filename */
+		len = strlen(opt->path) + strlen(opt->filename_file) + //[base_idx]) + 
+			+ (opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\')
+			+ (int)(log(mod->K) / log(10)) + 21;
+		MAKE_1ARRAY(outfile, len);
+		sprintf(outfile, "%s%s%s.%s.K=%d.out.txt", opt->path,
+			opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+			opt->filename_file, //[base_idx],
+			opt->admixture ? "admix" : "mix", mod->K);
+	}
 	if ((fp = fopen(outfile, "w")) == NULL) {
-		FREE_1ARRAY(outfile);
-		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
+		int err_no = message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
 			FILE_OPEN_ERROR, outfile);
+		FREE_1ARRAY(outfile);
+		return err_no;
 	}
 
 	fprintf(fp, "logL = %f (%s)\n", mod->logL,
-		mod->converged?"converged":"not converged");
+		mod->converged ? "converged" : "not converged");
 	fprintf(fp, "AIC = %f\n", aic(mod));
 	fprintf(fp, "BIC = %f\n\n", bic(dat, mod));
 	fprintf(fp, "count.K\n");
@@ -186,8 +250,16 @@ int write_file_detail(options *opt, data *dat, model *mod)
 
 	/* print etaik */
 	if (!opt->admixture || opt->eta_constrained) {
-		sprintf(outfile, "%s%s.%s.K=%d.etak.txt", opt->path, opt->filename,
-			opt->admixture?"admix":"mix", mod->K);
+		if (opt->outfile_name != NULL) {
+			sprintf(outfile, "%s.%s.K=%d.etak.txt", opt->outfile_name,
+				opt->admixture ? "admix" : "mix", mod->K);
+		}
+		else {
+			sprintf(outfile, "%s%s%s.%s.K=%d.etak.txt", opt->path, //opt->filename
+				opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+				opt->filename_file,
+				opt->admixture ? "admix" : "mix", mod->K);
+		}
 		if ((fp = fopen(outfile, "w")) == NULL)
 			return message(stderr, __FILE__, __func__, __LINE__,
 				ERROR_MSG, FILE_OPEN_ERROR, outfile);
@@ -200,9 +272,18 @@ int write_file_detail(options *opt, data *dat, model *mod)
 			fprintf(fp, "%d\t%f\n", k, mod->etak[k]);
 #endif
 		fprintf(fp, "\n");
-	} else {
-		sprintf(outfile, "%s%s.%s.K=%d.etaik.txt", opt->path, opt->filename,
-			opt->admixture?"admix":"mix", mod->K);
+	}
+	else {
+		if (opt->outfile_name != NULL) {
+			sprintf(outfile, "%s.%s.K=%d.etaik.txt", opt->outfile_name,
+				opt->admixture ? "admix" : "mix", mod->K);
+		}
+		else {
+			sprintf(outfile, "%s%s%s.%s.K=%d.etaik.txt", opt->path, //opt->filename,
+				opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+				opt->filename_file,
+				opt->admixture ? "admix" : "mix", mod->K);
+		}
 		if ((fp = fopen(outfile, "w")) == NULL)
 			return message(stderr, __FILE__, __func__, __LINE__,
 				ERROR_MSG, FILE_OPEN_ERROR, outfile);
@@ -220,8 +301,17 @@ int write_file_detail(options *opt, data *dat, model *mod)
 	fclose(fp);
 
 	/* print KLM */
-	sprintf(outfile, "%s%s.%s.K=%d.pklm.txt", opt->path, opt->filename, 
-		opt->admixture?"admix":"mix", mod->K);
+	if (opt->outfile_name != NULL) {
+		sprintf(outfile, "%s.%s.K=%d.pklm.txt", opt->outfile_name,
+			opt->admixture ? "admix" : "mix", mod->K);
+	}
+	else {
+		sprintf(outfile, "%s%s%s.%s.K=%d.pklm.txt", opt->path, //opt->filename,
+			opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+			opt->filename_file,
+			opt->admixture ? "admix" : "mix", mod->K);
+	}
+	
 	if ((fp = fopen(outfile, "w")) == NULL)
 		return message(stderr, __FILE__, __func__, __LINE__,
 			ERROR_MSG, FILE_OPEN_ERROR, outfile);
@@ -234,7 +324,7 @@ int write_file_detail(options *opt, data *dat, model *mod)
 #ifndef OLDWAY
 					mod->vpklm[mod->pindex][k][l][m]);
 #else
-					mod->pKLM[k][l][m]);
+				mod->pKLM[k][l][m]);
 #endif
 	fprintf(fp, "\n");
 	fclose(fp);
@@ -257,7 +347,7 @@ int write_file_detail(options *opt, data *dat, model *mod)
  * @param mod model object
  * @return void
  */
-void partition_admixture(data *dat, model *mod)
+void partition_admixture(data* dat, model* mod)
 {
 	int i, k, l, m, I_K;
 	double map;
@@ -305,29 +395,40 @@ void partition_admixture(data *dat, model *mod)
  */
 #undef MAKE_1ARRAY
 #define MAKE_1ARRAY MAKE_1ARRAY_ERR
-int popq_admix(options *opt, data *dat, model *mod)
+int popq_admix(options* opt, data* dat, model* mod)
 {
 	int i, k, l, m, n;
 	int len;
-	char *outfile = NULL;
-	FILE *fp;
-	double **vik_p = NULL;
+	char* outfile = NULL;
+	FILE* fp;
+	double** vik_p = NULL;
 	int err = NO_ERROR;
 
-	len = strlen(opt->path) + strlen(opt->filename) + 18;
 	k = mod->K;
 	while (k) {
 		len++;
 		k /= 10;
 	}
 
-	MAKE_1ARRAY(outfile, len);
-	if ((err = errno))
-		goto FREE_AND_RETURN;
-
 	/* open file to write */
-	sprintf(outfile, "%s%s_admix_popq_%d.popq", opt->path, opt->filename,
-		mod->K);
+	if (opt->outfile_name != NULL) {
+		len = strlen(opt->outfile_name) + 19 + (int) log10(mod->K);
+		MAKE_1ARRAY(outfile, len);
+		if ((err = errno))
+			goto FREE_AND_RETURN;
+		sprintf(outfile, "%s_admix_popq_%d.popq", opt->outfile_name,
+			mod->K);
+	}
+	else {
+		len = strlen(opt->path) + strlen(opt->filename_file) + 19 + (int) log10(mod->K);
+		MAKE_1ARRAY(outfile, len);
+		if ((err = errno))
+			goto FREE_AND_RETURN;
+		sprintf(outfile, "%s%s%s_admix_popq_%d.popq", opt->path, 
+			opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+			opt->filename_file, mod->K);
+	}
+	
 	if ((fp = fopen(outfile, "w")) == NULL) {
 		err = message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
 			FILE_OPEN_ERROR, outfile);
@@ -349,12 +450,12 @@ int popq_admix(options *opt, data *dat, model *mod)
 				 * - missing data has info, and
 				 * - missing alleles used to normalize below
 				 */
-				for (m=0; m<dat->uniquealleles[l]; m++)
+				for (m = 0; m < dat->uniquealleles[l]; m++)
 					vik_p[dat->idv[i].locale][k]
-						+= mod->diklm[i][k][l][m];
+					+= mod->diklm[i][k][l][m];
 		for (n = 0; n < dat->numpops; n++)
 			vik_p[n][k] = vik_p[n][k]
-				/(dat->ploidy*dat->L*dat->i_p[n]);
+			/ (dat->ploidy * dat->L * dat->i_p[n]);
 	}
 
 	for (n = 0; n < dat->numpops; n++) {
@@ -388,23 +489,33 @@ FREE_AND_RETURN:
  */
 #undef MAKE_1ARRAY
 #define MAKE_1ARRAY MAKE_1ARRAY_ERR
-int indivq_admix(options *opt, data *dat, model *mod)
+int indivq_admix(options* opt, data* dat, model* mod)
 {
 
 	int i, k, l, m;
 	int len;
-	char *outfile = NULL;
-	double **vik = NULL;
-	FILE *fp;
+	char* outfile = NULL;
+	double** vik = NULL;
+	FILE* fp;
 	int err = NO_ERROR;
 
-	len = strlen(opt->path) + strlen(opt->filename) + 23 + (int) (log(mod->K)/log(10));
-
-	MAKE_1ARRAY(outfile, len);
-	if ((err = errno))
-		goto FREE_AND_RETURN;
-
-	sprintf(outfile, "%s%s_admix_indivq_%d.indivq", opt->path, opt->filename, mod->K);
+	if (opt->outfile_name != NULL) {
+		len = strlen(opt->outfile_name) + 23 + (int) log10(mod->K);
+		MAKE_1ARRAY(outfile, len);
+		if ((err = errno))
+			goto FREE_AND_RETURN;
+		sprintf(outfile, "%s_admix_indivq_%d.indivq", opt->outfile_name, mod->K);
+	}
+	else {
+		len = strlen(opt->path) + strlen(opt->filename_file) + 23 + (int) log10(mod->K);
+		MAKE_1ARRAY(outfile, len);
+		if ((err = errno))
+			goto FREE_AND_RETURN;
+		sprintf(outfile, "%s%s%s_admix_indivq_%d.indivq", opt->path, 
+			opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+			opt->filename_file, mod->K);
+	}
+	
 	if ((fp = fopen(outfile, "w")) == NULL) {
 		err = message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
 			FILE_OPEN_ERROR, outfile);
@@ -427,9 +538,10 @@ int indivq_admix(options *opt, data *dat, model *mod)
 					/* was BUG ignored missing as in popq_admix() */
 					for (m = 0; m < dat->uniquealleles[l]; m++)
 						vik[i][k] += mod->diklm[i][k][l][m];
-				vik[i][k] = vik[i][k]/(dat->ploidy*dat->L);
+				vik[i][k] = vik[i][k] / (dat->ploidy * dat->L);
 			}
-	} else {
+	}
+	else {
 #ifndef OLDWAY
 		vik = mod->vetaik[mod->pindex];
 #else
@@ -467,7 +579,7 @@ FREE_AND_RETURN:
  * @param mod model object
  * @return void
  */
-void partition_mixture(data *dat, model *mod)
+void partition_mixture(data* dat, model* mod)
 {
 	int i, k;
 	double tmp_vik;
@@ -501,23 +613,34 @@ void partition_mixture(data *dat, model *mod)
  */
 #undef MAKE_1ARRAY
 #define MAKE_1ARRAY MAKE_1ARRAY_ERR
-int popq_mix(options *opt, data *dat, model *mod)
+int popq_mix(options* opt, data* dat, model* mod)
 {
 	int i, k, n, len;
-	char *outfile = NULL;
-	double **vik_p = NULL;
-	FILE *fp;
+	char* outfile = NULL;
+	double** vik_p = NULL;
+	FILE* fp;
 	int err = NO_ERROR;
 
-	/* compute length of output filename */
-	len = strlen(opt->path) + strlen(opt->filename) + 15;
-
-	MAKE_1ARRAY(outfile, len);
-	if ((err = errno))
-		goto FREE_AND_RETURN;
-
 	/* write popq file */
-	sprintf(outfile, "%s%s_mix_popq.popq", opt->path, opt->filename);
+	if (opt->outfile_name != NULL) {
+		/* compute length of output filename */
+		len = strlen(opt->outfile_name) + 15;
+		MAKE_1ARRAY(outfile, len);
+		if ((err = errno))
+			goto FREE_AND_RETURN;
+		sprintf(outfile, "%s_mix_popq.popq", opt->outfile_name);
+	}
+	else {
+		/* compute length of output filename */
+		len = strlen(opt->path) + strlen(opt->filename_file) + 15;
+		MAKE_1ARRAY(outfile, len);
+		if ((err = errno))
+			goto FREE_AND_RETURN;
+		sprintf(outfile, "%s%s%s_mix_popq.popq", opt->path,
+			opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+			opt->filename_file);
+	}
+	
 	if ((fp = fopen(outfile, "w")) == NULL) {
 		err = message(stderr, __FILE__, __func__, __LINE__,
 			ERROR_MSG, FILE_OPEN_ERROR, outfile);
@@ -528,19 +651,19 @@ int popq_mix(options *opt, data *dat, model *mod)
 	if ((err = errno))
 		goto FREE_AND_RETURN;
 
-	for (n=0; n<dat->numpops; n++)
+	for (n = 0; n < dat->numpops; n++)
 		for (k = 0; k < mod->K; k++)
 			vik_p[n][k] = 0;
 
 	for (k = 0; k < mod->K; k++)		/* population */
 		/* was BUG: access past end of array */
-		for (i=0; i<dat->I; i++)	/* individual */
+		for (i = 0; i < dat->I; i++)	/* individual */
 			vik_p[dat->idv[i].locale][k] += mod->vik[i][k];
 
 	/* normalize by the number of individuals in each locale */
 	for (n = 0; n < dat->numpops; n++)
 		for (k = 0; k < mod->K; k++)
-			vik_p[n][k] = vik_p[n][k]/dat->i_p[n];
+			vik_p[n][k] = vik_p[n][k] / dat->i_p[n];
 
 	for (n = 0; n < dat->numpops; n++) {
 		fprintf(fp, "%s:\t", dat->pops[n]);
@@ -570,17 +693,23 @@ FREE_AND_RETURN:
  * @return error status
  * @return error status
  */
-int indivq_mix(options *opt, data *dat, model *mod)
+int indivq_mix(options* opt, data* dat, model* mod)
 {
 	int i, k, len;
-	char *outfile = NULL;
-	FILE *fp;
+	char* outfile = NULL;
+	FILE* fp;
 
-	len = strlen(opt->path) + strlen(opt->filename) + 18;
-
-	MAKE_1ARRAY(outfile, len);
-
-	sprintf(outfile, "%s%smix_indivq.indivq", opt->path, opt->filename);
+	if (opt->outfile_name != NULL) {
+		len = strlen(opt->outfile_name) + 16 + (int) log10(mod->K);
+		MAKE_1ARRAY(outfile, len);
+		sprintf(outfile, "%s.mix.K=%d.indivq", opt->outfile_name, mod->K);
+	} else {
+		len = strlen(opt->path) + strlen(opt->filename_file) + 16 + (int) log10(mod->K);
+		MAKE_1ARRAY(outfile, len);
+		sprintf(outfile, "%s%s%s.mix.K=%d.indivq", opt->path, 
+			opt->path && opt->path[strlen(opt->path) - 1] != '/' && opt->path[strlen(opt->path) - 1] != '\\' ? "/" : "",
+			opt->filename_file, mod->K);
+	}
 	if ((fp = fopen(outfile, "w")) == NULL) {
 		FREE_1ARRAY(outfile);
 		return message(stderr, __FILE__, __func__, __LINE__, ERROR_MSG,
