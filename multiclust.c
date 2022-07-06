@@ -908,6 +908,7 @@ int make_options(options** opt)
 			MEMORY_ALLOCATION, "options object");
 
 	(*opt)->filename = NULL;
+	(*opt)->filename_file = NULL;
 	(*opt)->path = "./";
 	(*opt)->interleaved = 0;
 	(*opt)->missing_value = MISSING;
@@ -1484,6 +1485,8 @@ int parse_options(options* opt, data* dat, int argc, const char** argv)
 						opt->filename_path[i+1] = 0;
 						break;
 					}
+				if (!opt->filename_file)
+					opt->filename_file = opt->filename;
 			}
 			break;
 		case 'g':
