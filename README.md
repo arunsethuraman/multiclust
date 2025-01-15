@@ -143,4 +143,4 @@ MULTICLUST clusters multivariate discrete data (here multi-locus genomic data, m
 
 # Citation
  
-MULTICLUST - Fast Multinomial Clustering of multiallelic genotypes to infer genetic population structure by Arun Sethuraman, Wei-Chen Chen, Margaret Wanjiku, Karin S. Dorman (forthcoming)
+MULTICLUST - Fast Multinomial Clustering of multiallelic genotypes to infer genetic population structure by Arun Sethuraman, Wei-Chen Chen, Margaret Wanjiku, Karin S. Dorman (forthcoming) Please contact Dr. Sethuraman (asethuraman@sdsu.edu) with questions, or post bug reports to this GitHub page.
